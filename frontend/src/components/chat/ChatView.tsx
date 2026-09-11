@@ -6,7 +6,7 @@ import { streamRequest } from "@/lib/stream";
 import type { SSEEvent } from "@/lib/sse";
 import Composer from "@/components/chat/Composer";
 import MessageActions from "@/components/chat/MessageActions";
-import MessageItem from "@/components/chat/MessageItem";
+import MessageList from "@/components/chat/MessageList";
 import { useChatStreamStore } from "@/stores/chatStream";
 
 export default function ChatView() {
@@ -124,26 +124,24 @@ export default function ChatView() {
         }
       : null;
 
+  const items = streamingMessage ? [...visible, streamingMessage] : visible;
+
   return (
     <>
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
-        {visible.map((m) => (
-          <MessageItem
-            key={m.id}
-            message={m}
-            actions={
-              <MessageActions
-                message={m}
-                onRegenerate={regenerate}
-                onEdit={editAndResend}
-                onRate={rate}
-              />
-            }
-          />
-        ))}
-        {streamingMessage && <MessageItem message={streamingMessage} />}
-        {error && <p className="text-sm text-red-500">出错：{error}</p>}
-      </div>
+      <MessageList
+        items={items}
+        renderActions={(m) =>
+          m.status === "streaming" ? null : (
+            <MessageActions
+              message={m}
+              onRegenerate={regenerate}
+              onEdit={editAndResend}
+              onRate={rate}
+            />
+          )
+        }
+      />
+      {error && <p className="px-4 py-2 text-sm text-red-500">出错：{error}</p>}
       <Composer onSend={send} onStop={stop} generating={ownsActive} />
     </>
   );

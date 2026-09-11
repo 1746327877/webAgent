@@ -2,6 +2,25 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, expect, test, vi } from "vitest";
+import type { ReactNode } from "react";
+import type { MessageItemData } from "@/api/sessions";
+
+// jsdom 无 ResizeObserver/布局，Virtuoso 不会渲染任何行；测试里退化为全量渲染
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: ({
+    data,
+    itemContent,
+  }: {
+    data: MessageItemData[];
+    itemContent: (index: number, item: MessageItemData) => ReactNode;
+  }) => (
+    <>
+      {data.map((item, index) => (
+        <div key={index}>{itemContent(index, item)}</div>
+      ))}
+    </>
+  ),
+}));
 
 vi.mock("@/api/sessions", () => ({
   useCreateSession: () => ({ mutateAsync: vi.fn() }),
