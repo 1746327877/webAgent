@@ -1,3 +1,5 @@
+import { apiFetch } from "@/lib/api";
+
 export interface SSEEvent {
   event: string;
   data: unknown;
@@ -46,7 +48,7 @@ export async function streamChat(
   onEvent: (e: SSEEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const res = await fetch(path, {
+  const res = await apiFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
