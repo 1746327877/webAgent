@@ -73,7 +73,7 @@ def upgrade() -> None:
     sa.Column('file_path', sa.String(length=512), nullable=False),
     sa.Column('original_name', sa.String(length=255), nullable=False),
     sa.Column('mime_type', sa.String(length=128), nullable=False),
-    sa.Column('size_bytes', sa.Integer(), nullable=False),
+    sa.Column('size_bytes', sa.BigInteger(), nullable=False),
     sa.Column('kind', sa.String(length=16), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['message_id'], ['messages.id'], ondelete='CASCADE'),
