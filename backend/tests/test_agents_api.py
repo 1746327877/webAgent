@@ -1,0 +1,73 @@
+from app.ai.deps import get_provider
+from app.main import app
+from tests.fake_provider import FakeProvider
+
+AGENT = {
+    "name": "代码专家",
+    "emoji": "💻",
+    "description": "review 代码",
+    "tags": ["dev"],
+    "system_prompt": "你是{{agent.name}}，今天是 {{today}}，用户 {{user.name}}",
+    "model_config": {"model": "qwen2.5:7b-instruct-q4_K_M", "temperature": 0.3},
+    "welcome_msg": "贴代码给我",
+    "examples": ["帮我 review 这段"],
+}
+
+
+async def test_create_agent_and_variables(client, auth_headers):
+    r = await client.post("/api/v1/agents", json=AGENT, headers=auth_headers)
+    assert r.status_code == 201
+    data = r.json()
+    assert data["name"] == "代码专家" and data["status"] == "draft"
+    assert data["model_config"]["model"] == "qwen2.5:7b-instruct-q4_K_M"
+    assert set(data["variables"]) == {"agent.name", "today", "user.name"}
+
+
+async def test_model_config_validation(client, auth_headers):
+    bad = {**AGENT, "model_config": {"model": "m", "temperature": 2.5}}
+    r = await client.post("/api/v1/agents", json=bad, headers=auth_headers)
+    assert r.status_code == 422
+
+
+async def test_list_update_archive_delete(client, auth_headers):
+    aid = (await client.post("/api/v1/agents", json=AGENT, headers=auth_headers)).json()["id"]
+    lst = await client.get("/api/v1/agents", headers=auth_headers)
+    assert [a["id"] for a in lst.json()] == [aid]
+
+    r = await client.patch(
+        f"/api/v1/agents/{aid}", json={"name": "改名", "status": "archived"}, headers=auth_headers
+    )
+    assert r.json()["name"] == "改名" and r.json()["status"] == "archived"
+
+    r2 = await client.patch(
+        f"/api/v1/agents/{aid}",
+        json={"model_config": {"model": "m2"}},
+        headers=auth_headers,
+    )
+    assert r2.json()["model_config"]["model"] == "m2"
+
+    d = await client.delete(f"/api/v1/agents/{aid}", headers=auth_headers)
+    assert d.status_code == 204
+
+
+async def test_themes_no_cross_user(client, auth_headers):
+    from tests.test_sessions_api import make_user
+
+    aid = (await client.post("/api/v1/agents", json=AGENT, headers=auth_headers)).json()["id"]
+    other = await make_user(client, "bob")
+    assert (await client.get(f"/api/v1/agents/{aid}", headers=other)).status_code == 404
+    assert (await client.patch(f"/api/v1/agents/{aid}", json={}, headers=other)).status_code == 404
+
+
+async def test_models_endpoint(client, auth_headers):
+    class P(FakeProvider):
+        async def list_available(self):
+            from app.ai.providers.base import ModelInfo
+
+            return [ModelInfo(name="qwen2.5:7b-instruct-q4_K_M", size_mb=4700.0)]
+
+    app.dependency_overrides[get_provider] = lambda: P()
+    r = await client.get("/api/v1/models", headers=auth_headers)
+    assert r.status_code == 200
+    names = [m["name"] for m in r.json()]
+    assert "qwen2.5:7b-instruct-q4_K_M" in names
