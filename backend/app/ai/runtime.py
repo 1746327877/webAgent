@@ -5,7 +5,7 @@ import uuid
 from collections.abc import AsyncIterator
 
 from sqlalchemy import func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.providers.base import ChatRequest, ModelProvider
 from app.core.config import settings
@@ -70,6 +70,7 @@ async def run_generation(
     provider: ModelProvider,
     *,
     user_content: str | None,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> AsyncIterator[str]:
     """user_content=None 时仅生成助手消息（重新生成场景）。"""
     exclude_ids: set[uuid.UUID] = set()
@@ -161,6 +162,19 @@ async def run_generation(
             blocks[-1]["duration_ms"] = round((time.monotonic() - thinking_started) * 1000)
 
     await _finalize(db, assistant_id, session.id, blocks, status, usage, error_text)
+    if (
+        session_factory is not None
+        and user_content is not None
+        and status != "error"
+        and session.title == "新对话"
+    ):
+        from app.services.title_service import generate_title
+
+        asyncio.create_task(
+            generate_title(
+                session_factory, provider, session.id, user_content, user_content.strip()[:16]
+            )
+        )
     yield sse(
         "done",
         {

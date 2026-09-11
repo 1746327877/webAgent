@@ -4,13 +4,13 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.deps import get_provider
 from app.ai.providers.base import ModelProvider
 from app.ai.runtime import run_generation
 from app.api.v1.deps import get_current_user
-from app.core.db import get_db
+from app.core.db import get_db, get_session_factory
 from app.models.session import Message, Session
 from app.models.user import User
 from app.schemas.session import (
@@ -98,10 +98,11 @@ async def post_message(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     provider: Annotated[ModelProvider, Depends(get_provider)],
+    factory: Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)],
 ):
     session = await session_service.get_owned_session(db, user, sid)
     return StreamingResponse(
-        run_generation(db, session, provider, user_content=body.content),
+        run_generation(db, session, provider, user_content=body.content, session_factory=factory),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

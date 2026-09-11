@@ -46,7 +46,7 @@ async def test_send_message_persists_and_streams(client, auth_headers, session_m
     async with session_maker() as db:
         s = await db.get(Session, session["id"])
         assert s.last_message_at is not None
-        assert s.title == "新对话"  # 标题生成在 Task 7
+        assert s.title  # 标题可能已被异步生成替换，只断言非空
 
 
 async def test_thinking_block_accumulates(client, auth_headers):
@@ -138,6 +138,11 @@ async def test_send_message_sse_headers(client, auth_headers):
 
 async def test_history_no_dup_and_order(client, auth_headers):
     session = (await client.post("/api/v1/sessions", json={}, headers=auth_headers)).json()
+    # Task 7 起首条消息会触发异步标题任务并复用同一 provider；
+    # 先把标题改为非默认值，标题守卫不会触发，last_request 保持在第二轮请求上
+    await client.patch(
+        f"/api/v1/sessions/{session['id']}", json={"title": "t"}, headers=auth_headers
+    )
     provider = FakeProvider([("token", {"delta": "答"})])
     _override(provider)
 

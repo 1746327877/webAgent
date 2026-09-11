@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
-from app.core.db import get_db
+from app.core.db import get_db, get_session_factory
 from app.main import app
 from app.models import Base
 
@@ -56,6 +56,7 @@ async def client(session_maker):
             yield s
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session_factory] = lambda: session_maker
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
