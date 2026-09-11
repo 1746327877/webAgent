@@ -3,7 +3,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCreateSession, useMessages, type MessageItemData } from "@/api/sessions";
 import { apiFetch } from "@/lib/api";
 import { streamRequest } from "@/lib/stream";
+import type { SSEEvent } from "@/lib/sse";
 import Composer from "@/components/chat/Composer";
+import MessageActions from "@/components/chat/MessageActions";
 import MessageItem from "@/components/chat/MessageItem";
 import { useChatStreamStore } from "@/stores/chatStream";
 
@@ -17,30 +19,80 @@ export default function ChatView() {
     useChatStreamStore();
   const ownsActive = Boolean(active && active.sessionId === sessionId);
 
+  function onStreamEvent(evt: SSEEvent, targetSession: string) {
+    if (evt.event === "message_start") {
+      start((evt.data as { message_id: string }).message_id, targetSession);
+    } else if (evt.event === "token") {
+      appendToken((evt.data as { delta: string }).delta);
+    } else if (evt.event === "thinking") {
+      appendThinking((evt.data as { delta: string }).delta);
+    } else if (evt.event === "error") {
+      setError((evt.data as { message: string }).message);
+    }
+  }
+
+  /** 清掉旧流后请求 SSE，结束后清叠加层并刷新消息/会话列表（send 与 regenerate 共用） */
+  async function runStream(path: string, body: unknown, targetSession: string, fallbackError: string) {
+    clear();
+    try {
+      await streamRequest(path, body, (evt) => onStreamEvent(evt, targetSession));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallbackError);
+    } finally {
+      clearActive();
+      await queryClient.invalidateQueries({ queryKey: ["messages", targetSession] });
+      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    }
+  }
+
   async function send(text: string) {
     let target = sessionId;
-    try {
-      if (!target) {
+    if (!target) {
+      try {
         const created = await createSession.mutateAsync();
         target = created.id;
         navigate(`/sessions/${created.id}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "发送失败");
+        return;
       }
-      const targetSession = target;
-      clear();
-      await streamRequest(`/api/v1/sessions/${targetSession}/messages`, { content: text }, (evt) => {
-        if (evt.event === "message_start")
-          start((evt.data as { message_id: string }).message_id, targetSession);
-        else if (evt.event === "token") appendToken((evt.data as { delta: string }).delta);
-        else if (evt.event === "thinking") appendThinking((evt.data as { delta: string }).delta);
-        else if (evt.event === "error") setError((evt.data as { message: string }).message);
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "发送失败");
-    } finally {
-      clearActive();
-      await queryClient.invalidateQueries({ queryKey: ["messages", target] });
-      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
     }
+    await runStream(`/api/v1/sessions/${target}/messages`, { content: text }, target, "发送失败");
+  }
+
+  async function regenerate(messageId: string) {
+    if (!sessionId) return;
+    await runStream(
+      `/api/v1/sessions/${sessionId}/regenerate`,
+      { message_id: messageId },
+      sessionId,
+      "重新生成失败",
+    );
+  }
+
+  async function editAndResend(messageId: string, text: string) {
+    if (!sessionId) return;
+    const res = await apiFetch(`/api/v1/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ blocks: [{ type: "text", content: text }] }),
+    });
+    if (!res.ok) {
+      setError(`HTTP ${res.status}`);
+      return;
+    }
+    await regenerate(messageId);
+  }
+
+  async function rate(messageId: string, rating: 1 | -1) {
+    const res = await apiFetch(`/api/v1/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ rating }),
+    });
+    if (!res.ok) {
+      setError(`HTTP ${res.status}`);
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
   }
 
   async function stop() {
@@ -76,7 +128,18 @@ export default function ChatView() {
     <>
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         {visible.map((m) => (
-          <MessageItem key={m.id} message={m} />
+          <MessageItem
+            key={m.id}
+            message={m}
+            actions={
+              <MessageActions
+                message={m}
+                onRegenerate={regenerate}
+                onEdit={editAndResend}
+                onRate={rate}
+              />
+            }
+          />
         ))}
         {streamingMessage && <MessageItem message={streamingMessage} />}
         {error && <p className="text-sm text-red-500">出错：{error}</p>}

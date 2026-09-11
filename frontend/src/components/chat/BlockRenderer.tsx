@@ -1,6 +1,5 @@
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { Block } from "@/api/sessions";
+import MarkdownContent from "@/components/chat/MarkdownContent";
 
 export default function BlockRenderer({ block }: { block: Block }) {
   if (block.type === "thinking") {
@@ -12,11 +11,7 @@ export default function BlockRenderer({ block }: { block: Block }) {
     );
   }
   if (block.type === "text") {
-    return (
-      <div className="prose prose-sm max-w-none dark:prose-invert">
-        <Markdown remarkPlugins={[remarkGfm]}>{block.content ?? ""}</Markdown>
-      </div>
-    );
+    return <MarkdownContent content={block.content ?? ""} />;
   }
   if (block.type === "tool_call" || block.type === "tool_result") {
     return (
