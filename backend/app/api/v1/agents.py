@@ -7,7 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_current_user
 from app.core.db import get_db
 from app.models.user import User
-from app.schemas.agent import AgentCreateIn, AgentOut, AgentUpdateIn
+from app.schemas.agent import (
+    AgentCreateIn,
+    AgentOut,
+    AgentUpdateIn,
+    AgentVersionOut,
+    PublishOut,
+    RollbackIn,
+)
 from app.services import agent_service
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -65,3 +72,35 @@ async def delete_agent(
 ):
     agent = await agent_service.get_owned_agent(db, user, aid)
     await agent_service.delete_agent(db, agent)
+
+
+@router.post("/{aid}/publish", response_model=PublishOut)
+async def publish_agent(
+    aid: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    agent = await agent_service.get_owned_agent(db, user, aid)
+    row = await agent_service.publish_agent(db, agent, user)
+    return PublishOut(version=row.version, status=agent.status)
+
+
+@router.get("/{aid}/versions", response_model=list[AgentVersionOut])
+async def list_versions(
+    aid: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    agent = await agent_service.get_owned_agent(db, user, aid)
+    return await agent_service.list_versions(db, agent)
+
+
+@router.post("/{aid}/rollback", response_model=AgentOut)
+async def rollback_agent(
+    aid: uuid.UUID,
+    body: RollbackIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    agent = await agent_service.get_owned_agent(db, user, aid)
+    return _to_out(await agent_service.rollback_agent(db, agent, body.version))
