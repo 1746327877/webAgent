@@ -1,6 +1,7 @@
 import { useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
-import Markdown, { type Components } from "react-markdown";
+import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { cn } from "@/lib/utils";
 import { createHighlighterCoreSync } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
@@ -67,7 +68,7 @@ function languageOf(children: ReactNode): string | null {
   return found ? found.slice("language-".length) : null;
 }
 
-function PreBlock({ children }: ComponentPropsWithoutRef<"pre">) {
+function PreBlock({ children, node: _node, ...props }: ComponentPropsWithoutRef<"pre"> & ExtraProps) {
   const [copied, setCopied] = useState(false);
   const code = textContent(children);
   const language = languageOf(children);
@@ -90,7 +91,12 @@ function PreBlock({ children }: ComponentPropsWithoutRef<"pre">) {
           {copied ? "已复制" : "复制"}
         </button>
       </div>
-      <pre className="overflow-x-auto p-3 text-sm">{children}</pre>
+      <pre
+        {...props}
+        className={cn("overflow-x-auto p-3 text-sm", props.className)}
+      >
+        {children}
+      </pre>
     </div>
   );
 }
