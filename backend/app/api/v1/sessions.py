@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from app.ai.providers.base import ModelProvider
 from app.ai.runtime import run_generation
 from app.api.v1.deps import get_current_user
 from app.core.db import get_db
+from app.models.session import Message, Session
 from app.models.user import User
 from app.schemas.session import (
     MessageOut,
@@ -19,7 +20,7 @@ from app.schemas.session import (
     SessionOut,
     SessionPatchIn,
 )
-from app.services import session_service
+from app.services import message_service, session_service
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -101,6 +102,41 @@ async def post_message(
     session = await session_service.get_owned_session(db, user, sid)
     return StreamingResponse(
         run_generation(db, session, provider, user_content=body.content),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+class RegenerateIn(BaseModel):
+    message_id: uuid.UUID
+
+
+async def _owned_regenerate_target(
+    sid: uuid.UUID,
+    body: RegenerateIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> tuple[Session, Message]:
+    # 归属校验必须是独立依赖：FastAPI 会先解析全部 Depends 再执行端点体，
+    # 若放在端点体内，get_provider 将先于 404 解析（测试未触发 lifespan 时直接 500）
+    session = await session_service.get_owned_session(db, user, sid)
+    message = await message_service.get_owned_message(db, user, body.message_id)
+    if message.session_id != session.id:
+        raise HTTPException(status_code=404, detail="消息不存在")
+    return session, message
+
+
+@router.post("/{sid}/regenerate")
+async def regenerate(
+    target: Annotated[tuple[Session, Message], Depends(_owned_regenerate_target)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    provider: Annotated[ModelProvider, Depends(get_provider)],
+):
+    session, message = target
+    keep_target = message.role == "user"
+    await message_service.truncate_session(db, session, message.id, keep_target=keep_target)
+    return StreamingResponse(
+        run_generation(db, session, provider, user_content=None),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
