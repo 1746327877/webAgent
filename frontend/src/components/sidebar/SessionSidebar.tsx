@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, useNavigate, useParams } from "react-router-dom";
+import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import {
   useCreateSession,
   useDeleteSession,
@@ -19,7 +19,10 @@ export default function SessionSidebar() {
   const updateSession = useUpdateSession();
   const deleteSession = useDeleteSession();
   const navigate = useNavigate();
-  const { sessionId } = useParams();
+  // 用 location 匹配而非 useParams：sidebar 渲染在父路由元素中（Outlet 之外），
+  // 显式匹配当前 URL 才能稳定拿到正在浏览的会话 id（不依赖路由嵌套层级）
+  const match = useMatch("/sessions/:sessionId");
+  const activeId = match?.params.sessionId;
 
   const items = data?.pages.flatMap((p) => p.items) ?? [];
   const groups = groupByDate(items);
@@ -37,7 +40,7 @@ export default function SessionSidebar() {
   function onDelete(id: string) {
     if (window.confirm("删除该会话？")) {
       deleteSession.mutate(id);
-      if (sessionId === id) navigate("/");
+      if (activeId === id) navigate("/");
     }
   }
 

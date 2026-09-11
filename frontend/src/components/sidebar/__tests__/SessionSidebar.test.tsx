@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, test, vi } from "vitest";
 
 vi.mock("@/api/sessions", () => ({
@@ -33,6 +33,11 @@ vi.mock("@/api/sessions", () => ({
 
 import SessionSidebar from "@/components/sidebar/SessionSidebar";
 
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="pathname">{location.pathname}</div>;
+}
+
 test("渲染会话标题", () => {
   render(
     <MemoryRouter>
@@ -40,4 +45,29 @@ test("渲染会话标题", () => {
     </MemoryRouter>,
   );
   expect(screen.getByText("Java 学习")).toBeInTheDocument();
+});
+
+test("删除当前会话后跳回 /", () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(
+    <MemoryRouter initialEntries={["/sessions/s1"]}>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <>
+              <SessionSidebar />
+              <LocationProbe />
+            </>
+          }
+        >
+          <Route path="sessions/:sessionId" element={<div>chat view</div>} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(screen.getByTestId("pathname").textContent).toBe("/sessions/s1");
+  fireEvent.click(screen.getByText("删"));
+  expect(screen.getByTestId("pathname").textContent).toBe("/");
+  vi.restoreAllMocks();
 });
