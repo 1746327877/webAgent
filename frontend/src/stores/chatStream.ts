@@ -7,13 +7,18 @@ interface ActiveStream {
   thinking: string;
 }
 
+interface ChatStreamError {
+  sessionId: string | null;
+  message: string;
+}
+
 interface ChatStreamState {
   active: ActiveStream | null;
-  error: string | null;
+  error: ChatStreamError | null;
   start: (id: string, sessionId: string) => void;
   appendToken: (delta: string) => void;
   appendThinking: (delta: string) => void;
-  setError: (message: string | null) => void;
+  setError: (message: string, sessionId: string | null) => void;
   clearActive: () => void;
   clear: () => void;
 }
@@ -27,7 +32,7 @@ export const useChatStreamStore = create<ChatStreamState>((set) => ({
     set((s) => (s.active ? { active: { ...s.active, content: s.active.content + delta } } : s)),
   appendThinking: (delta) =>
     set((s) => (s.active ? { active: { ...s.active, thinking: s.active.thinking + delta } } : s)),
-  setError: (message) => set({ error: message }),
+  setError: (message, sessionId) => set({ error: { sessionId, message } }),
   clearActive: () => set({ active: null }),
   clear: () => set({ active: null, error: null }),
 }));

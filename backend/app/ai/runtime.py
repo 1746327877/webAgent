@@ -64,6 +64,27 @@ async def _finalize(
     await db.commit()
 
 
+async def recover_stale_streaming(
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+) -> int:
+    """把上次进程遗留的 streaming 消息标记为 error（进程中断的生成无法续传）。
+
+    返回被修复的行数。启动阶段调用；默认使用生产 SessionLocal。
+    """
+    if session_factory is None:
+        from app.core.db import SessionLocal
+
+        session_factory = SessionLocal
+    async with session_factory() as db:
+        result = await db.execute(
+            update(Message)
+            .where(Message.status == "streaming")
+            .values(status="error", error="生成中断")
+        )
+        await db.commit()
+        return int(result.rowcount or 0)
+
+
 async def run_generation(
     db: AsyncSession,
     session: Session,
@@ -98,8 +119,6 @@ async def run_generation(
     assistant_id = assistant.id
     exclude_ids.add(assistant_id)
 
-    yield sse("message_start", {"message_id": str(assistant_id), "role": "assistant"})
-
     blocks: list[dict] = []
     usage: dict | None = None
     status = "done"
@@ -110,6 +129,9 @@ async def run_generation(
     last_flush = t0
 
     try:
+        # message_start 也放在 try 内：客户端在首个事件前断连时，GeneratorExit
+        # 能命中下方分支 finalize，避免留下永远 streaming 的僵尸消息
+        yield sse("message_start", {"message_id": str(assistant_id), "role": "assistant"})
         history = await _load_history(db, session.id, exclude_ids=exclude_ids)
         if user_content is not None:
             history.append({"role": "user", "content": user_content})

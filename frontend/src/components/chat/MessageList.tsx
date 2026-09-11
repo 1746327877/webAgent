@@ -13,6 +13,7 @@ export default function MessageList({ items, renderActions }: Props) {
     <Virtuoso
       data={items}
       followOutput="smooth"
+      computeItemKey={(_, m) => m.id}
       className="min-h-0 flex-1"
       itemContent={(_, m) => (
         <div className="px-4 py-2">

@@ -25,6 +25,12 @@ export default function MessageItem({
       {message.blocks.map((b, i) => (
         <BlockRenderer key={i} block={b} />
       ))}
+      {message.status === "error" && (
+        <p className="text-sm text-red-500">生成失败，可点「重新生成」重试</p>
+      )}
+      {message.status === "stopped" && (
+        <p className="text-xs text-muted-foreground">已停止</p>
+      )}
       {actions}
     </div>
   );

@@ -69,3 +69,39 @@ test("当前会话的流式叠加层正常显示且可停止", () => {
   expect(screen.getByRole("button", { name: "停止" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "发送" })).not.toBeInTheDocument();
 });
+
+test("当前会话的错误可见", () => {
+  useChatStreamStore.setState({
+    active: null,
+    error: { sessionId: "current", message: "本会话错误" },
+  });
+  renderAt("current");
+  expect(screen.getByText("出错：本会话错误")).toBeInTheDocument();
+});
+
+test("其他会话的错误不显示", () => {
+  useChatStreamStore.setState({
+    active: null,
+    error: { sessionId: "other", message: "其他会话错误" },
+  });
+  renderAt("current");
+  expect(screen.queryByText("出错：其他会话错误")).not.toBeInTheDocument();
+});
+
+test("无会话时显示创建失败错误", () => {
+  useChatStreamStore.setState({
+    active: null,
+    error: { sessionId: null, message: "创建失败" },
+  });
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<ChatView />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(screen.getByText("出错：创建失败")).toBeInTheDocument();
+});

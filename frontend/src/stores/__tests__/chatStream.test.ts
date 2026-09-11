@@ -18,19 +18,19 @@ test("clear 后 active 为 null", () => {
   expect(useChatStreamStore.getState().active).toBeNull();
 });
 
-test("setError 记录错误", () => {
-  useChatStreamStore.getState().setError("boom");
-  expect(useChatStreamStore.getState().error).toBe("boom");
+test("setError 记录错误及其会话作用域", () => {
+  useChatStreamStore.getState().setError("boom", "s1");
+  expect(useChatStreamStore.getState().error).toEqual({ sessionId: "s1", message: "boom" });
 });
 
 test("clearActive 保留 error，start 重置 error", () => {
   const s = useChatStreamStore.getState();
   s.clear();
-  s.setError("boom");
+  s.setError("boom", "s1");
   s.clearActive();
   expect(useChatStreamStore.getState().active).toBeNull();
-  expect(useChatStreamStore.getState().error).toBe("boom");
-  s.setError("boom2");
+  expect(useChatStreamStore.getState().error).toEqual({ sessionId: "s1", message: "boom" });
+  s.setError("boom2", "s2");
   s.start("m2", "s2");
   expect(useChatStreamStore.getState().error).toBeNull();
 });

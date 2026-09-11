@@ -9,6 +9,7 @@ const message = {
   blocks: [{ type: "text", content: "hi" }],
   status: "done",
   rating: null,
+  error: null,
   created_at: "2026-09-11T10:00:00Z",
 };
 

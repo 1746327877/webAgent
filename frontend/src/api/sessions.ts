@@ -29,6 +29,7 @@ export interface MessageItemData {
   blocks: Block[];
   status: string;
   rating: number | null;
+  error: string | null;
   created_at: string;
 }
 

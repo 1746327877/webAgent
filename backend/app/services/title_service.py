@@ -31,7 +31,7 @@ async def generate_title(
                     title += ev.payload.get("delta", "")
     except Exception:  # noqa: BLE001 —— 标题失败不打扰主流程
         title = ""
-    title = title.strip().strip('"').strip("《》").split("\n")[0].strip()[:32] or fallback[:16]
+    title = title.strip().strip('"').strip("《》").split("\n")[0].strip()[:16] or fallback[:16]
     async with factory() as db:
         session = await db.get(Session, session_id)
         if session is not None and session.title == "新对话":

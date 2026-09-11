@@ -18,6 +18,8 @@ export default function ChatView() {
   const { active, error, start, appendToken, appendThinking, setError, clear, clearActive } =
     useChatStreamStore();
   const ownsActive = Boolean(active && active.sessionId === sessionId);
+  // 错误只归其产生时的会话：发送创建场景的 error.sessionId 为 null，仅无会话时显示
+  const scopedError = error && error.sessionId === (sessionId ?? null) ? error.message : null;
 
   function onStreamEvent(evt: SSEEvent, targetSession: string) {
     if (evt.event === "message_start") {
@@ -27,7 +29,7 @@ export default function ChatView() {
     } else if (evt.event === "thinking") {
       appendThinking((evt.data as { delta: string }).delta);
     } else if (evt.event === "error") {
-      setError((evt.data as { message: string }).message);
+      setError((evt.data as { message: string }).message, targetSession);
     }
   }
 
@@ -37,7 +39,7 @@ export default function ChatView() {
     try {
       await streamRequest(path, body, (evt) => onStreamEvent(evt, targetSession));
     } catch (err) {
-      setError(err instanceof Error ? err.message : fallbackError);
+      setError(err instanceof Error ? err.message : fallbackError, targetSession);
     } finally {
       clearActive();
       await queryClient.invalidateQueries({ queryKey: ["messages", targetSession] });
@@ -53,7 +55,7 @@ export default function ChatView() {
         target = created.id;
         navigate(`/sessions/${created.id}`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "发送失败");
+        setError(err instanceof Error ? err.message : "发送失败", target ?? null);
         return;
       }
     }
@@ -77,7 +79,7 @@ export default function ChatView() {
       body: JSON.stringify({ blocks: [{ type: "text", content: text }] }),
     });
     if (!res.ok) {
-      setError(`HTTP ${res.status}`);
+      setError(`HTTP ${res.status}`, sessionId);
       return;
     }
     await regenerate(messageId);
@@ -89,7 +91,7 @@ export default function ChatView() {
       body: JSON.stringify({ rating }),
     });
     if (!res.ok) {
-      setError(`HTTP ${res.status}`);
+      setError(`HTTP ${res.status}`, sessionId ?? null);
       return;
     }
     await queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
@@ -102,7 +104,8 @@ export default function ChatView() {
 
   if (!sessionId) {
     return (
-      <div className="flex flex-1 items-center justify-center text-muted-foreground">
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+        {scopedError && <p className="text-sm text-red-500">出错：{scopedError}</p>}
         点击「新建任务」开始对话
       </div>
     );
@@ -120,6 +123,7 @@ export default function ChatView() {
           ],
           status: "streaming",
           rating: null,
+          error: null,
           created_at: new Date().toISOString(),
         }
       : null;
@@ -141,7 +145,7 @@ export default function ChatView() {
           )
         }
       />
-      {error && <p className="px-4 py-2 text-sm text-red-500">出错：{error}</p>}
+      {scopedError && <p className="px-4 py-2 text-sm text-red-500">出错：{scopedError}</p>}
       <Composer onSend={send} onStop={stop} generating={ownsActive} />
     </>
   );
