@@ -83,11 +83,13 @@ async def refresh(
         raise HTTPException(status_code=401, detail="缺少刷新令牌")
     token_hash = hashlib.sha256(raw.encode()).hexdigest()
     row = await db.scalar(
-        select(RefreshToken).where(
+        select(RefreshToken)
+        .where(
             RefreshToken.token_hash == token_hash,
             RefreshToken.revoked.is_(False),
             RefreshToken.expires_at > datetime.now(UTC),
         )
+        .with_for_update()
     )
     if row is None:
         raise HTTPException(status_code=401, detail="刷新令牌无效或已过期")
