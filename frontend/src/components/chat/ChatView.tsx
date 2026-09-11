@@ -13,8 +13,9 @@ export default function ChatView() {
   const queryClient = useQueryClient();
   const createSession = useCreateSession();
   const { data: messages = [] } = useMessages(sessionId);
-  const { active, error, start, appendToken, appendThinking, setError, clear } =
+  const { active, error, start, appendToken, appendThinking, setError, clear, clearActive } =
     useChatStreamStore();
+  const ownsActive = Boolean(active && active.sessionId === sessionId);
 
   async function send(text: string) {
     let target = sessionId;
@@ -24,9 +25,11 @@ export default function ChatView() {
         target = created.id;
         navigate(`/sessions/${created.id}`);
       }
+      const targetSession = target;
       clear();
-      await streamRequest(`/api/v1/sessions/${target}/messages`, { content: text }, (evt) => {
-        if (evt.event === "message_start") start((evt.data as { message_id: string }).message_id);
+      await streamRequest(`/api/v1/sessions/${targetSession}/messages`, { content: text }, (evt) => {
+        if (evt.event === "message_start")
+          start((evt.data as { message_id: string }).message_id, targetSession);
         else if (evt.event === "token") appendToken((evt.data as { delta: string }).delta);
         else if (evt.event === "thinking") appendThinking((evt.data as { delta: string }).delta);
         else if (evt.event === "error") setError((evt.data as { message: string }).message);
@@ -34,14 +37,14 @@ export default function ChatView() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "发送失败");
     } finally {
+      clearActive();
       await queryClient.invalidateQueries({ queryKey: ["messages", target] });
       await queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      clear();
     }
   }
 
   async function stop() {
-    if (!active) return;
+    if (!active || !ownsActive) return;
     await apiFetch(`/api/v1/messages/${active.id}/stop`, { method: "POST" });
   }
 
@@ -54,19 +57,20 @@ export default function ChatView() {
   }
 
   const visible = messages.filter((m) => m.status !== "streaming");
-  const streamingMessage: MessageItemData | null = active
-    ? {
-        id: active.id,
-        role: "assistant",
-        blocks: [
-          ...(active.thinking ? [{ type: "thinking", content: active.thinking }] : []),
-          { type: "text", content: active.content },
-        ],
-        status: "streaming",
-        rating: null,
-        created_at: new Date().toISOString(),
-      }
-    : null;
+  const streamingMessage: MessageItemData | null =
+    ownsActive && active
+      ? {
+          id: active.id,
+          role: "assistant",
+          blocks: [
+            ...(active.thinking ? [{ type: "thinking", content: active.thinking }] : []),
+            { type: "text", content: active.content },
+          ],
+          status: "streaming",
+          rating: null,
+          created_at: new Date().toISOString(),
+        }
+      : null;
 
   return (
     <>
@@ -77,7 +81,7 @@ export default function ChatView() {
         {streamingMessage && <MessageItem message={streamingMessage} />}
         {error && <p className="text-sm text-red-500">出错：{error}</p>}
       </div>
-      <Composer onSend={send} onStop={stop} generating={Boolean(active)} />
+      <Composer onSend={send} onStop={stop} generating={ownsActive} />
     </>
   );
 }
