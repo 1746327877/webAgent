@@ -7,12 +7,18 @@ from app.ai.providers.ollama import OllamaProvider
 from app.ai.runtime import recover_stale_streaming
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.db import SessionLocal
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     app.state.provider = OllamaProvider(settings.ollama_base_url)
     await recover_stale_streaming()
+
+    from app.ai.tools import sync_tools
+
+    async with SessionLocal() as db:
+        await sync_tools(db)
     yield
     await app.state.provider.aclose()
 
