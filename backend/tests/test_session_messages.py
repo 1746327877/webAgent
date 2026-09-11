@@ -134,3 +134,22 @@ async def test_send_message_sse_headers(client, auth_headers):
     assert r.headers["content-type"].startswith("text/event-stream")
     assert r.headers["cache-control"] == "no-cache"
     assert r.headers["x-accel-buffering"] == "no"
+
+
+async def test_history_no_dup_and_order(client, auth_headers):
+    session = (await client.post("/api/v1/sessions", json={}, headers=auth_headers)).json()
+    provider = FakeProvider([("token", {"delta": "答"})])
+    _override(provider)
+
+    for content in ("hi", "second"):
+        r = await client.post(
+            f"/api/v1/sessions/{session['id']}/messages",
+            json={"content": content},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+
+    assert provider.last_request is not None
+    messages = provider.last_request.messages
+    assert [m["role"] for m in messages] == ["user", "assistant", "user"]
+    assert [m["content"] for m in messages] == ["hi", "答", "second"]

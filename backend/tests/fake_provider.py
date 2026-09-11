@@ -15,8 +15,11 @@ class FakeProvider(ModelProvider):
     def __init__(self, script: list[tuple[str, dict]] | None = None, raise_after: int | None = None):
         self.script = script or [("token", {"delta": "你好"})]
         self.raise_after = raise_after
+        self.last_request: ChatRequest | None = None
 
     def chat_stream(self, req: ChatRequest) -> AsyncIterator[ChatEvent]:
+        self.last_request = req
+
         async def gen():
             for i, (etype, payload) in enumerate(self.script):
                 if self.raise_after is not None and i >= self.raise_after:

@@ -25,12 +25,12 @@ def _text_of(blocks: list[dict]) -> str:
 
 
 async def _load_history(
-    db: AsyncSession, session_id: uuid.UUID, exclude_id: uuid.UUID
+    db: AsyncSession, session_id: uuid.UUID, exclude_ids: set[uuid.UUID]
 ) -> list[dict]:
     rows = (
         await db.scalars(
             select(Message)
-            .where(Message.session_id == session_id, Message.id != exclude_id)
+            .where(Message.session_id == session_id, Message.id.not_in(exclude_ids))
             .order_by(Message.created_at.desc(), Message.id.desc())
             .limit(settings.history_rounds * 2)
         )
@@ -72,15 +72,17 @@ async def run_generation(
     user_content: str | None,
 ) -> AsyncIterator[str]:
     """user_content=None 时仅生成助手消息（重新生成场景）。"""
+    exclude_ids: set[uuid.UUID] = set()
     if user_content is not None:
-        db.add(
-            Message(
-                session_id=session.id,
-                role="user",
-                blocks=[{"type": "text", "content": user_content}],
-            )
+        user_msg = Message(
+            session_id=session.id,
+            role="user",
+            blocks=[{"type": "text", "content": user_content}],
         )
-        await db.flush()
+        db.add(user_msg)
+        # 独立事务提交：与 assistant 占位分开，使 created_at 严格递增，历史排序稳定
+        await db.commit()
+        exclude_ids.add(user_msg.id)
 
     assistant = Message(
         session_id=session.id,
@@ -93,6 +95,7 @@ async def run_generation(
     await db.commit()
     await db.refresh(assistant)
     assistant_id = assistant.id
+    exclude_ids.add(assistant_id)
 
     yield sse("message_start", {"message_id": str(assistant_id), "role": "assistant"})
 
@@ -106,7 +109,7 @@ async def run_generation(
     last_flush = t0
 
     try:
-        history = await _load_history(db, session.id, exclude_id=assistant_id)
+        history = await _load_history(db, session.id, exclude_ids=exclude_ids)
         if user_content is not None:
             history.append({"role": "user", "content": user_content})
         req = ChatRequest(model=settings.default_model, messages=history)
