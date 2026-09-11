@@ -41,7 +41,12 @@ async def session_maker(engine):
 async def clean_tables(engine):
     yield
     async with engine.begin() as c:
-        await c.execute(text("TRUNCATE refresh_tokens, users CASCADE"))
+        await c.execute(
+            text(
+                "TRUNCATE attachments, messages, sessions, refresh_tokens, users, agents"
+                " CASCADE"
+            )
+        )
 
 
 @pytest_asyncio.fixture
