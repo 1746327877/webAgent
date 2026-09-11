@@ -1,5 +1,3 @@
-import { apiFetch } from "@/lib/api";
-
 export interface SSEEvent {
   event: string;
   data: unknown;
@@ -42,18 +40,3 @@ export async function* parseSSE(stream: ReadableStream<Uint8Array>): AsyncGenera
   }
 }
 
-export async function streamChat(
-  path: string,
-  body: unknown,
-  onEvent: (e: SSEEvent) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  const res = await apiFetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-  for await (const e of parseSSE(res.body)) onEvent(e);
-}

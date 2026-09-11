@@ -25,9 +25,11 @@ export default function ChatView() {
     if (evt.event === "message_start") {
       start((evt.data as { message_id: string }).message_id, targetSession);
     } else if (evt.event === "token") {
-      appendToken((evt.data as { delta: string }).delta);
+      const data = evt.data as { delta: string; message_id: string };
+      appendToken(data.delta, data.message_id);
     } else if (evt.event === "thinking") {
-      appendThinking((evt.data as { delta: string }).delta);
+      const data = evt.data as { delta: string; message_id: string };
+      appendThinking(data.delta, data.message_id);
     } else if (evt.event === "error") {
       setError((evt.data as { message: string }).message, targetSession);
     }
@@ -36,12 +38,18 @@ export default function ChatView() {
   /** 清掉旧流后请求 SSE，结束后清叠加层并刷新消息/会话列表（send 与 regenerate 共用） */
   async function runStream(path: string, body: unknown, targetSession: string, fallbackError: string) {
     clear();
+    let streamId: string | undefined;
     try {
-      await streamRequest(path, body, (evt) => onStreamEvent(evt, targetSession));
+      await streamRequest(path, body, (evt) => {
+        if (evt.event === "message_start") {
+          streamId = (evt.data as { message_id: string }).message_id;
+        }
+        onStreamEvent(evt, targetSession);
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : fallbackError, targetSession);
     } finally {
-      clearActive();
+      clearActive(streamId);
       await queryClient.invalidateQueries({ queryKey: ["messages", targetSession] });
       await queryClient.invalidateQueries({ queryKey: ["sessions"] });
     }
