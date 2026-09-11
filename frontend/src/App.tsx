@@ -3,6 +3,7 @@ import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import ChatPage from "@/pages/ChatPage";
 import RequireAuth from "@/components/RequireAuth";
+import ChatView from "@/components/chat/ChatView";
 
 export default function App() {
   return (
@@ -17,7 +18,10 @@ export default function App() {
               <ChatPage />
             </RequireAuth>
           }
-        />
+        >
+          <Route index element={<ChatView />} />
+          <Route path="sessions/:sessionId" element={<ChatView />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
