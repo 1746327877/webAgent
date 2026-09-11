@@ -26,7 +26,7 @@ async def truncate_session(
         await db.scalars(
             select(Message.id)
             .where(Message.session_id == session.id)
-            .order_by(Message.created_at, Message.id)
+            .order_by(Message.seq)
         )
     ).all()
     ids = list(ids)

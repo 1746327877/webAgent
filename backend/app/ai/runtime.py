@@ -31,7 +31,7 @@ async def _load_history(
         await db.scalars(
             select(Message)
             .where(Message.session_id == session_id, Message.id.not_in(exclude_ids))
-            .order_by(Message.created_at.desc(), Message.id.desc())
+            .order_by(Message.seq.desc())
             .limit(settings.history_rounds * 2)
         )
     ).all()

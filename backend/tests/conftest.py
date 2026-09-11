@@ -43,8 +43,8 @@ async def clean_tables(engine):
     async with engine.begin() as c:
         await c.execute(
             text(
-                "TRUNCATE attachments, messages, sessions, refresh_tokens, users, agents"
-                " CASCADE"
+                "TRUNCATE attachments, messages, sessions, refresh_tokens, users, agents,"
+                " agent_versions, agent_tools, tools CASCADE"
             )
         )
 

@@ -65,7 +65,7 @@ async def delete_session(db: AsyncSession, session: Session) -> None:
 async def list_messages(db: AsyncSession, session: Session) -> list[Message]:
     rows = (
         await db.scalars(
-            select(Message).where(Message.session_id == session.id).order_by(Message.created_at)
+            select(Message).where(Message.session_id == session.id).order_by(Message.seq)
         )
     ).all()
     return list(rows)
