@@ -11,6 +11,7 @@ from app.ai.providers.base import (
     ModelInfo,
     ModelProvider,
     ProviderHealth,
+    ProviderStreamError,
 )
 
 
@@ -48,6 +49,8 @@ class OllamaProvider(ModelProvider):
                 if not line.strip():
                     continue
                 chunk = json.loads(line)
+                if err := chunk.get("error"):
+                    raise ProviderStreamError(str(err))
                 msg = chunk.get("message", {})
                 if thinking := msg.get("thinking"):
                     yield ChatEvent("thinking", {"delta": thinking})

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass
@@ -15,10 +16,17 @@ class ChatRequest:
     keep_alive: str = "15m"
 
 
+EventType = Literal["token", "thinking", "tool_call", "usage"]
+
+
 @dataclass
 class ChatEvent:
-    type: str  # token / thinking / tool_call / usage
+    type: EventType
     payload: dict = field(default_factory=dict)
+
+
+class ProviderStreamError(RuntimeError):
+    """Provider 在 200 流内返回错误块（如显存不足）。"""
 
 
 @dataclass

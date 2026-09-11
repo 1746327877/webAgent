@@ -75,3 +75,29 @@ async def test_list_loaded_parses_ps():
     assert loaded[0].name == "qwen2.5:7b"
     assert loaded[0].size_vram_mb == 6000.0
     await provider.aclose()
+
+
+ERROR_NDJSON = "\n".join(  # noqa: FLY002 - JSON payload, not f-string material
+    [
+        '{"message":{"content":"部分"}}',
+        '{"error":"model requires more system memory"}',
+    ]
+)
+
+
+@respx.mock
+async def test_chat_stream_raises_on_inline_error_chunk():
+    import pytest
+
+    from app.ai.providers.base import ProviderStreamError
+
+    respx.post("http://localhost:11434/api/chat").mock(
+        return_value=httpx.Response(200, content=ERROR_NDJSON.encode("utf-8"))
+    )
+    provider = OllamaProvider("http://localhost:11434")
+    with pytest.raises(ProviderStreamError):
+        async for _ in provider.chat_stream(
+            ChatRequest(model="m", messages=[{"role": "user", "content": "hi"}])
+        ):
+            pass
+    await provider.aclose()
