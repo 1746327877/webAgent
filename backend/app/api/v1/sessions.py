@@ -2,8 +2,13 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Query
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.deps import get_provider
+from app.ai.providers.base import ModelProvider
+from app.ai.runtime import run_generation
 from app.api.v1.deps import get_current_user
 from app.core.db import get_db
 from app.models.user import User
@@ -79,3 +84,23 @@ async def list_messages(
 ):
     session = await session_service.get_owned_session(db, user, sid)
     return await session_service.list_messages(db, session)
+
+
+class MessageIn(BaseModel):
+    content: str = Field(min_length=1, max_length=8000)
+
+
+@router.post("/{sid}/messages")
+async def post_message(
+    sid: uuid.UUID,
+    body: MessageIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    provider: Annotated[ModelProvider, Depends(get_provider)],
+):
+    session = await session_service.get_owned_session(db, user, sid)
+    return StreamingResponse(
+        run_generation(db, session, provider, user_content=body.content),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

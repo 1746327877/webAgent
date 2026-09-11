@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     refresh_token_days: int = 7
     ollama_base_url: str = "http://localhost:11434"
     cors_origins: list[str] = ["http://localhost:5173"]
+    default_model: str = "qwen2.5:7b-instruct-q4_K_M"
+    history_rounds: int = 10
 
 
 settings = Settings()
