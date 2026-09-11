@@ -6,7 +6,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://webagent:webagent@localhost:5432/webagent"
     test_database_url: str = "postgresql+asyncpg://webagent:webagent@localhost:5432/webagent_test"
-    jwt_secret: str = "dev-secret-change-me"
+    jwt_secret: str = "dev-secret-change-me-0123456789abcdef"
     access_token_minutes: int = 15
     refresh_token_days: int = 7
     ollama_base_url: str = "http://localhost:11434"
