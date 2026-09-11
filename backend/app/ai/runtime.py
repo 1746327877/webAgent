@@ -15,11 +15,29 @@ from app.models.user import User
 
 FLUSH_INTERVAL_S = 0.2
 MAX_ERROR_LEN = 500
+MAX_TOOL_ROUNDS = 5
+TOOL_TIMEOUT_S = 30.0
+TOOL_RESULT_MAX = 8000
+TOOL_PREVIEW_LEN = 200
 CANCEL_FLAGS: dict[uuid.UUID, bool] = {}
 
 
 def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def _execute_tool(name: str, args: str) -> tuple[str, str]:
+    from app.ai.tools.registry import get_tool
+
+    item = get_tool(name)
+    if item is None:
+        return f"未知工具：{name}", "error"
+    try:
+        parsed = json.loads(args) if args else {}
+        result = await asyncio.wait_for(item.handler(**parsed), timeout=TOOL_TIMEOUT_S)
+        return str(result), "ok"
+    except Exception as exc:  # noqa: BLE001 —— 工具失败转为错误结果回填，不中断生成
+        return f"工具执行失败：{exc}", "error"
 
 
 def _text_of(blocks: list[dict]) -> str:
@@ -139,55 +157,140 @@ async def run_generation(
         # message_start 也放在 try 内：客户端在首个事件前断连时，GeneratorExit
         # 能命中下方分支 finalize，避免留下永远 streaming 的僵尸消息
         yield sse("message_start", {"message_id": str(assistant_id), "role": "assistant"})
-        history = await _load_history(
+        messages = (
+            [{"role": "system", "content": cfg.system_prompt}] if cfg.system_prompt else []
+        )
+        messages += await _load_history(
             db, session.id, exclude_ids=exclude_ids, rounds=cfg.history_rounds
         )
         if user_content is not None:
-            history.append({"role": "user", "content": user_content})
-        if cfg.system_prompt:
-            history.insert(0, {"role": "system", "content": cfg.system_prompt})
-        req = ChatRequest(
-            model=cfg.model,
-            messages=history,
-            tools=tools_payload(cfg.tool_slugs) or None,
-            temperature=cfg.temperature,
-            top_p=cfg.top_p,
-            max_tokens=cfg.max_tokens,
-            num_ctx=cfg.num_ctx,
-        )
+            messages.append({"role": "user", "content": user_content})
 
-        async for ev in provider.chat_stream(req):
-            now = time.monotonic()
-            if CANCEL_FLAGS.pop(assistant_id, False):
-                status = "stopped"
+        cancelled = False
+        for _ in range(MAX_TOOL_ROUNDS):
+            req = ChatRequest(
+                model=cfg.model,
+                messages=messages,
+                tools=tools_payload(cfg.tool_slugs) or None,
+                temperature=cfg.temperature,
+                top_p=cfg.top_p,
+                max_tokens=cfg.max_tokens,
+                num_ctx=cfg.num_ctx,
+            )
+            tool_calls: list[dict] = []
+            async for ev in provider.chat_stream(req):
+                now = time.monotonic()
+                if CANCEL_FLAGS.pop(assistant_id, False):
+                    status = "stopped"
+                    cancelled = True
+                    break
+                if ev.type == "token":
+                    if blocks and blocks[-1]["type"] == "text":
+                        blocks[-1]["content"] += ev.payload["delta"]
+                    else:
+                        if (
+                            thinking_started is not None
+                            and blocks
+                            and blocks[-1]["type"] == "thinking"
+                        ):
+                            blocks[-1]["duration_ms"] = round((now - thinking_started) * 1000)
+                            thinking_started = None
+                        blocks.append({"type": "text", "content": ev.payload["delta"]})
+                    if first_token_ms is None:
+                        first_token_ms = round((now - t0) * 1000, 1)
+                    yield sse(
+                        "token", {"message_id": str(assistant_id), "delta": ev.payload["delta"]}
+                    )
+                elif ev.type == "thinking":
+                    if blocks and blocks[-1]["type"] == "thinking":
+                        blocks[-1]["content"] += ev.payload["delta"]
+                    else:
+                        blocks.append(
+                            {
+                                "type": "thinking",
+                                "content": ev.payload["delta"],
+                                "duration_ms": None,
+                            }
+                        )
+                        thinking_started = now
+                    yield sse(
+                        "thinking", {"message_id": str(assistant_id), "delta": ev.payload["delta"]}
+                    )
+                elif ev.type == "tool_call":
+                    tool_calls.append(ev.payload)
+                elif ev.type == "usage":
+                    if ev.payload:
+                        usage = ev.payload
+
+                if now - last_flush >= FLUSH_INTERVAL_S:
+                    await db.execute(
+                        update(Message).where(Message.id == assistant_id).values(blocks=blocks)
+                    )
+                    await db.commit()
+                    last_flush = now
+
+            if cancelled or not tool_calls:
                 break
-            if ev.type == "token":
-                if blocks and blocks[-1]["type"] == "text":
-                    blocks[-1]["content"] += ev.payload["delta"]
-                else:
-                    if thinking_started is not None and blocks and blocks[-1]["type"] == "thinking":
-                        blocks[-1]["duration_ms"] = round((now - thinking_started) * 1000)
-                        thinking_started = None
-                    blocks.append({"type": "text", "content": ev.payload["delta"]})
-                if first_token_ms is None:
-                    first_token_ms = round((now - t0) * 1000, 1)
-                yield sse("token", {"message_id": str(assistant_id), "delta": ev.payload["delta"]})
-            elif ev.type == "thinking":
-                if blocks and blocks[-1]["type"] == "thinking":
-                    blocks[-1]["content"] += ev.payload["delta"]
-                else:
-                    blocks.append({"type": "thinking", "content": ev.payload["delta"], "duration_ms": None})
-                    thinking_started = now
-                yield sse("thinking", {"message_id": str(assistant_id), "delta": ev.payload["delta"]})
-            elif ev.type == "usage":
-                usage = ev.payload
 
-            if now - last_flush >= FLUSH_INTERVAL_S:
-                await db.execute(
-                    update(Message).where(Message.id == assistant_id).values(blocks=blocks)
+            for call in tool_calls:
+                blocks.append(
+                    {
+                        "type": "tool_call",
+                        "id": call["id"],
+                        "tool": call["name"],
+                        "args": call["args"],
+                    }
                 )
-                await db.commit()
-                last_flush = now
+                yield sse(
+                    "tool_call",
+                    {
+                        "message_id": str(assistant_id),
+                        "id": call["id"],
+                        "name": call["name"],
+                        "args": call["args"],
+                    },
+                )
+            # 协议顺序：assistant(tool_calls) 消息必须先于各条 tool 结果消息
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": call["id"],
+                            "type": "function",
+                            "function": {"name": call["name"], "arguments": call["args"]},
+                        }
+                        for call in tool_calls
+                    ],
+                }
+            )
+            for call in tool_calls:
+                started = time.monotonic()
+                result, tool_status = await _execute_tool(call["name"], call.get("args") or "")
+                elapsed = round((time.monotonic() - started) * 1000)
+                preview = result[:TOOL_PREVIEW_LEN]
+                blocks.append(
+                    {
+                        "type": "tool_result",
+                        "id": call["id"],
+                        "tool": call["name"],
+                        "status": tool_status,
+                        "elapsed_ms": elapsed,
+                        "preview": preview,
+                    }
+                )
+                yield sse(
+                    "tool_result",
+                    {
+                        "message_id": str(assistant_id),
+                        "id": call["id"],
+                        "status": tool_status,
+                        "elapsed_ms": elapsed,
+                        "preview": preview,
+                    },
+                )
+                messages.append({"role": "tool", "content": result[:TOOL_RESULT_MAX]})
     except asyncio.CancelledError:
         await _finalize(db, assistant_id, session.id, blocks, "stopped", usage, None)
         raise
