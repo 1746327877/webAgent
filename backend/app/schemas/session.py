@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SessionCreateIn(BaseModel):
     title: str = Field(default="新对话", max_length=128)
+    agent_id: uuid.UUID | None = None
 
 
 class SessionPatchIn(BaseModel):
@@ -19,6 +20,7 @@ class SessionOut(BaseModel):
 
     id: uuid.UUID
     title: str
+    agent_id: uuid.UUID | None
     pinned: bool
     archived: bool
     last_message_at: datetime | None
@@ -36,6 +38,8 @@ class MessageOut(BaseModel):
 
     id: uuid.UUID
     session_id: uuid.UUID
+    agent_id: uuid.UUID | None
+    agent_version: int | None
     role: str
     blocks: list[dict]
     status: str

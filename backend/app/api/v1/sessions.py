@@ -31,7 +31,7 @@ async def create_session(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    return await session_service.create_session(db, user, body.title)
+    return await session_service.create_session(db, user, body.title, body.agent_id)
 
 
 @router.get("", response_model=SessionListOut)

@@ -4,12 +4,23 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.agent import Agent
 from app.models.session import Message, Session
 from app.models.user import User
 
 
-async def create_session(db: AsyncSession, user: User, title: str) -> Session:
-    session = Session(user_id=user.id, title=title)
+async def create_session(
+    db: AsyncSession, user: User, title: str, agent_id: uuid.UUID | None = None
+) -> Session:
+    if agent_id is not None:
+        agent = await db.scalar(
+            select(Agent).where(Agent.id == agent_id, Agent.owner_id == user.id)
+        )
+        if agent is None:
+            raise HTTPException(status_code=404, detail="智能体不存在")
+        if agent.status == "archived":
+            raise HTTPException(status_code=422, detail="该智能体已归档，无法新建会话")
+    session = Session(user_id=user.id, title=title, agent_id=agent_id)
     db.add(session)
     await db.commit()
     await db.refresh(session)

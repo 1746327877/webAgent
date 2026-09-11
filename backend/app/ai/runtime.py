@@ -7,9 +7,11 @@ from collections.abc import AsyncIterator
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.ai.agent_config import resolve_effective_config
 from app.ai.providers.base import ChatRequest, ModelProvider
-from app.core.config import settings
+from app.ai.tools.registry import tools_payload
 from app.models.session import Message, Session
+from app.models.user import User
 
 FLUSH_INTERVAL_S = 0.2
 MAX_ERROR_LEN = 500
@@ -25,14 +27,14 @@ def _text_of(blocks: list[dict]) -> str:
 
 
 async def _load_history(
-    db: AsyncSession, session_id: uuid.UUID, exclude_ids: set[uuid.UUID]
+    db: AsyncSession, session_id: uuid.UUID, exclude_ids: set[uuid.UUID], rounds: int
 ) -> list[dict]:
     rows = (
         await db.scalars(
             select(Message)
             .where(Message.session_id == session_id, Message.id.not_in(exclude_ids))
             .order_by(Message.seq.desc())
-            .limit(settings.history_rounds * 2)
+            .limit(rounds * 2)
         )
     ).all()
     history = []
@@ -94,11 +96,14 @@ async def run_generation(
     session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> AsyncIterator[str]:
     """user_content=None 时仅生成助手消息（重新生成场景）。"""
+    user = await db.get(User, session.user_id)
+    cfg = await resolve_effective_config(db, session, user_name=user.username if user else "")
     exclude_ids: set[uuid.UUID] = set()
     if user_content is not None:
         user_msg = Message(
             session_id=session.id,
             role="user",
+            agent_id=cfg.agent_id,
             blocks=[{"type": "text", "content": user_content}],
         )
         db.add(user_msg)
@@ -109,9 +114,11 @@ async def run_generation(
     assistant = Message(
         session_id=session.id,
         role="assistant",
+        agent_id=cfg.agent_id,
+        agent_version=cfg.agent_version,
         blocks=[],
         status="streaming",
-        model=settings.default_model,
+        model=cfg.model,
     )
     db.add(assistant)
     await db.commit()
@@ -132,10 +139,22 @@ async def run_generation(
         # message_start 也放在 try 内：客户端在首个事件前断连时，GeneratorExit
         # 能命中下方分支 finalize，避免留下永远 streaming 的僵尸消息
         yield sse("message_start", {"message_id": str(assistant_id), "role": "assistant"})
-        history = await _load_history(db, session.id, exclude_ids=exclude_ids)
+        history = await _load_history(
+            db, session.id, exclude_ids=exclude_ids, rounds=cfg.history_rounds
+        )
         if user_content is not None:
             history.append({"role": "user", "content": user_content})
-        req = ChatRequest(model=settings.default_model, messages=history)
+        if cfg.system_prompt:
+            history.insert(0, {"role": "system", "content": cfg.system_prompt})
+        req = ChatRequest(
+            model=cfg.model,
+            messages=history,
+            tools=tools_payload(cfg.tool_slugs) or None,
+            temperature=cfg.temperature,
+            top_p=cfg.top_p,
+            max_tokens=cfg.max_tokens,
+            num_ctx=cfg.num_ctx,
+        )
 
         async for ev in provider.chat_stream(req):
             now = time.monotonic()
