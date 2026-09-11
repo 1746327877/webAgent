@@ -53,6 +53,10 @@ async def test_tool_loop_executes_and_persists(client, auth_headers, session_mak
     second = provider.requests[1].messages
     assert any(m.get("role") == "assistant" and m.get("tool_calls") for m in second)
     assert any(m.get("role") == "tool" for m in second)
+    roles = [m.get("role") for m in second]
+    assert roles.index("assistant") < roles.index("tool")
+    # 请求为浅拷贝快照：首轮记录时 messages 尚未被 assistant/tool 回填（引用记录会看到最终形态）
+    assert [m.get("role") for m in provider.requests[0].messages] == ["user"]
 
     msgs = (await client.get(f"/api/v1/sessions/{s['id']}/messages", headers=auth_headers)).json()
     blocks = msgs[1]["blocks"]
@@ -78,6 +82,38 @@ async def test_unknown_tool_becomes_error_result(client, auth_headers):
     msgs = (await client.get(f"/api/v1/sessions/{s['id']}/messages", headers=auth_headers)).json()
     result_block = next(b for b in msgs[1]["blocks"] if b["type"] == "tool_result")
     assert result_block["status"] == "error" and "未知工具" in result_block["preview"]
+
+
+async def test_dict_tool_args_are_accepted(client, auth_headers, session_maker):
+    """Ollama function.arguments 为 JSON 对象；_execute_tool 需兼容 str | dict。"""
+    agent, s = await _session_with_agent(client, auth_headers)
+    async with session_maker() as db:
+        await sync_tools(db)
+        tool = (await db.scalars(select(Tool).where(Tool.slug == "kb_search"))).first()
+        db.add(AgentTool(agent_id=agent["id"], tool_id=tool.id))
+        await db.commit()
+
+    provider = FakeProvider(
+        [
+            [("tool_call", {"id": "c1", "name": "kb_search", "args": {"query": "x"}})],
+            [("token", {"delta": "好"})],
+        ]
+    )
+    app.dependency_overrides[get_provider] = lambda: provider
+    r = await client.post(
+        f"/api/v1/sessions/{s['id']}/messages", json={"content": "查一下"}, headers=auth_headers
+    )
+    assert "event: tool_result" in r.text
+    assert len(provider.requests) == 2
+    second = provider.requests[1].messages
+    roles = [m.get("role") for m in second]
+    assert roles.index("assistant") < roles.index("tool")
+    # 首轮请求快照未被后续回填污染（快照语义回归保护）
+    assert [m.get("role") for m in provider.requests[0].messages] == ["user"]
+
+    msgs = (await client.get(f"/api/v1/sessions/{s['id']}/messages", headers=auth_headers)).json()
+    result_block = next(b for b in msgs[1]["blocks"] if b["type"] == "tool_result")
+    assert result_block["status"] == "ok" and "知识库" in result_block["preview"]
 
 
 async def test_tool_loop_capped_at_five_rounds(client, auth_headers, session_maker):

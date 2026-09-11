@@ -26,14 +26,18 @@ def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _execute_tool(name: str, args: str) -> tuple[str, str]:
+async def _execute_tool(name: str, args: str | dict) -> tuple[str, str]:
     from app.ai.tools.registry import get_tool
 
     item = get_tool(name)
     if item is None:
         return f"未知工具：{name}", "error"
     try:
-        parsed = json.loads(args) if args else {}
+        # Ollama function.arguments 为 JSON 对象（dict）；兼容字符串脚本与空参
+        if isinstance(args, dict):
+            parsed = args
+        else:
+            parsed = json.loads(args) if args else {}
         result = await asyncio.wait_for(item.handler(**parsed), timeout=TOOL_TIMEOUT_S)
         return str(result), "ok"
     except Exception as exc:  # noqa: BLE001 —— 工具失败转为错误结果回填，不中断生成

@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
 from app.ai.providers.base import (
     ChatEvent,
@@ -43,8 +44,10 @@ class FakeProvider(ModelProvider):
         return self.rounds[index]
 
     def chat_stream(self, req: ChatRequest) -> AsyncIterator[ChatEvent]:
-        self.requests.append(req)
-        self.last_request = req
+        # 浅拷贝快照：runtime 会持续向 req.messages 追加回填消息，记录引用会看到最终形态
+        snapshot = replace(req, messages=list(req.messages))
+        self.requests.append(snapshot)
+        self.last_request = snapshot
         script = self._next_script()
 
         async def gen():
