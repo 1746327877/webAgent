@@ -9,6 +9,13 @@
 - 消息操作：停止、重新生成、编辑重发、有用/无用评分
 - 标题自动生成：首轮对话后由模型生成会话标题
 
+## 功能（M2 智能体）
+
+- 智能体管理：系统提示词（支持 `{{today}}` 变量）/参数/工具绑定/版本发布与回滚
+- 工具调用：内置 `time_now`（当前时间）；`kb_search` 将在 M3 提供
+- 选择智能体对话：新建会话时选择智能体，按绑定工具自动进入工具循环
+- 欢迎语与示例问题：智能体会话展示欢迎语与可点击的示例问题
+
 ## 快速开始
 
 1. 安装依赖：Docker Desktop、Ollama（`OLLAMA_MODELS` 指向数据盘）、uv（Python 3.12+）、Node 20+ / pnpm
@@ -22,6 +29,7 @@
 ```powershell
 cd backend
 uv run python -m scripts.seed                 # 创建 demo / Demo123456
+uv run python -m scripts.seed_agents          # 创建 3 个预置智能体（通用助手 / 代码专家 / 时间管家）
 uv run python -m scripts.seed_demo_sessions   # 为 demo 用户创建 1000 个会话与一组演示问答
 ```
 
