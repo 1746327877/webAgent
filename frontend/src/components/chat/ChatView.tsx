@@ -329,6 +329,7 @@ export default function ChatView() {
           attachments={attachments}
           onAttach={attach}
           onRemoveAttachment={removeAttachment}
+          sessionKey={sessionId ?? "new"}
         />
       </div>
       {openCitation && (

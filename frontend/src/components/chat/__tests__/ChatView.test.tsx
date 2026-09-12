@@ -359,3 +359,12 @@ test("切换会话丢弃待发附件，不会把旧会话的 attachment_id 发�
   );
   expect(mockState.lastPath).toBe("/api/v1/sessions/s2/messages");
 });
+
+test("切换会话清空输入框草稿", async () => {
+  renderAt("s1", true);
+  const input = () => screen.getByPlaceholderText("输入问题，Enter 发送") as HTMLInputElement;
+  await userEvent.type(input(), "不该带到新会话");
+  expect(input().value).toBe("不该带到新会话");
+  await userEvent.click(screen.getByRole("button", { name: "切换会话" }));
+  await waitFor(() => expect(input().value).toBe(""));
+});

@@ -110,3 +110,33 @@ test("附件达到 3 张后拒绝第 4 张并提示，发送最多 3 个 id", as
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "三张{Enter}");
   expect(onSend).toHaveBeenCalledWith("三张", [], ["att1", "att2", "att3"]);
 });
+
+test("sessionKey 变化时清空草稿与 @ 提及", async () => {
+  const onSend = vi.fn();
+  const { rerender } = render(
+    <Composer onSend={onSend} onStop={vi.fn()} generating={false} agents={AGENTS} sessionKey="s1" />,
+  );
+  const input = () => screen.getByPlaceholderText("输入问题，Enter 发送") as HTMLInputElement;
+  await userEvent.type(input(), "@深度");
+  await userEvent.click(await screen.findByText("深度思考"));
+  await userEvent.type(input(), " 跨会话草稿");
+  expect(input().value).toContain("跨会话草稿");
+
+  rerender(
+    <Composer onSend={onSend} onStop={vi.fn()} generating={false} agents={AGENTS} sessionKey="s2" />,
+  );
+  expect(input().value).toBe("");
+  // 旧 mentionIds 也必须丢弃：新会话发送不得携带 s1 的提及
+  await userEvent.type(input(), "新会话{Enter}");
+  expect(onSend).toHaveBeenCalledWith("新会话", [], []);
+});
+
+test("sessionKey 不变时保留草稿", async () => {
+  const { rerender } = render(
+    <Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} sessionKey="s1" />,
+  );
+  const input = () => screen.getByPlaceholderText("输入问题，Enter 发送") as HTMLInputElement;
+  await userEvent.type(input(), "半句草稿");
+  rerender(<Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} sessionKey="s1" />);
+  expect(input().value).toBe("半句草稿");
+});

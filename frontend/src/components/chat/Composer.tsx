@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ interface Props {
   attachments?: PendingAttachment[];
   onAttach?: (file: File) => void;
   onRemoveAttachment?: (id: string) => void;
+  sessionKey?: string;
 }
 
 const MENTION_TAIL = /@([^\s@]*)$/;
@@ -39,6 +40,7 @@ export default function Composer({
   attachments = [],
   onAttach,
   onRemoveAttachment,
+  sessionKey = "default",
 }: Props) {
   const [input, setInput] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -46,6 +48,17 @@ export default function Composer({
   const [activeIndex, setActiveIndex] = useState(0);
   const [attachHint, setAttachHint] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // 会话切换：ChatView 在会话间复用，必须丢弃上一个会话的草稿与提及（附件由 ChatView 负责）
+  const sessionKeyRef = useRef(sessionKey);
+  useEffect(() => {
+    if (sessionKeyRef.current === sessionKey) return;
+    sessionKeyRef.current = sessionKey;
+    setInput("");
+    setMentionIds([]);
+    setMentionQuery(null);
+    setAttachHint(false);
+  }, [sessionKey]);
 
   const options =
     mentionQuery === null
