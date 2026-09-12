@@ -67,15 +67,15 @@ uv run python -m scripts.seed_kb              # 创建演示知识库「Java 并
 
 前置：`docker compose up -d`；后端 `cd backend && uv run alembic upgrade head && uv run uvicorn app.main:app --reload --port 8000`；另开终端跑 `uv run arq app.workers.settings.WorkerSettings`（知识库解析需要）；前端 `cd frontend && pnpm dev`；用 demo / Demo123456 登录。
 
-1. 产生调用链：进入「代码专家」会话，提一个知识库问题并 `@深度思考` 接力，另上传一张图片提一个问。预期：接力输出两条助手消息（各自标注所属智能体），其间出现模型切换提示（qwen2.5 → deepseek-r1；图片回合切换到 `qwen2.5vl:7b`）；一轮问答产生 llm / tool（kb_search）/ retrieval / model_switch 四类 span。
+1. 产生调用链：进入「代码专家」会话，提一个知识库问题并 `@深度思考` 接力，另上传一张图片提一个问。预期：接力输出两条助手消息（各自标注所属智能体），模型在后台自动热切换（可在调用链的 `model_switch` span 中查看：qwen2.5 → deepseek-r1；图片回合切换到 `qwen2.5vl:7b`）；一轮问答产生 llm / tool（kb_search）/ retrieval / model_switch 四类 span。
 2. 核对聚合指标：请求 `GET /api/v1/admin/metrics/overview?hours=24`（Swagger 或带登录态）。预期：`cards.llm_calls ≥ 3`、`cards.model_switches ≥ 1`、`cards.retrieval_calls ≥ 1`、`cards.prompt_tokens > 0`、`http.requests > 0`。
 3. 全局仪表盘：左下角「📊 可观测性」进入 `/admin`。预期：指标卡片与请求/Token 趋势、智能体活跃排行、Token 分布、显存曲线均有数据；切「7 天」不报错。
 4. 会话调用链：回到聊天页，点智能体标题栏「查看调用链」进入 `/admin/sessions/:sessionId`（左侧默认选中最新助手消息，可切换）。预期：waterfall 出现 llm / tool / retrieval 条（接力/图片回合含 model_switch）；点 tool 条，抽屉展示 input/output JSON 树与耗时。
-5. 筛选与导出：在会话详情「工具日志」区筛选 type=tool、status=ok，点「导出 CSV」。预期：文件用 Excel 打开无中文乱码（UTF-8 BOM），行数与筛选结果一致。
+5. 筛选与导出：在会话详情「工具日志」区筛选 type=tool、status=ok，点「导出 CSV」。预期：文件用 Excel 打开无中文乱码（UTF-8 BOM），行数与筛选结果一致（CSV 为全量筛选结果，不受表格 200 行上限影响）。
 
 > 原第 6 步（告警规则 + 评估 + 站内通知）已按计划砍除，见下方「已知延后项」。
 
-## 已知延后项（不在 M5 范围，记录备查）
+## 已知延后项（含按计划砍除项，记录备查）
 
 - **告警规则 + 评估任务 + 站内通知（Task 10，按计划有意砍除）**：M5 计划与开发路线图均将本项标注为【可砍】，收尾时按砍项优先级决定跳过，非遗漏；迁移已建好 `alert_rules` / `alert_events` 表（闲置无害）。阈值规则 API、ARQ 每分钟评估、仪表盘铃铛红点/横幅留待 M6.x 或 Phase 2 复活。设计 08.5 明确不做的告警 webhook 预留字段、短信/钉钉通知同列于此。
 - **`mv_metrics_hourly` 物化视图未启用**：设计 08.4 的 MV 是规模化优化；M5 以等价的即时聚合 SQL（`date_trunc('hour')` + `percentile_cont` + `FILTER`，走 `idx_spans_agg`）实现，换来精确的 p95 重聚合与天然的多用户过滤；个人规模（90 天保留）下无性能问题。MV + 每分钟 REFRESH 留作 M6/Docker 部署优化项。
