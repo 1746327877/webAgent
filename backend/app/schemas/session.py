@@ -47,4 +47,5 @@ class MessageOut(BaseModel):
     rating: int | None
     error: str | None
     model: str | None
+    attachments: list[dict] = Field(default_factory=list)
     created_at: datetime

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -28,6 +28,8 @@ const mockState = vi.hoisted(() => ({
   messages: [] as MessageItemData[],
   agents: [] as { id: string; name: string; emoji: string }[],
   session: { id: "s1", agent_id: "a1" } as { id: string; agent_id: string | null },
+  lastPath: "",
+  lastBody: null as unknown,
 }));
 
 vi.mock("@/api/sessions", () => ({
@@ -52,10 +54,12 @@ vi.mock("@/api/agents", () => ({
 // 流式事件按序同步派发后挂起，便于断言叠加层渲染（结束后会被 clearActive 清掉）
 vi.mock("@/lib/stream", () => ({
   streamRequest: async (
-    _path: string,
-    _body: unknown,
+    path: string,
+    body: unknown,
     onEvent: (e: { event: string; data: unknown }) => void,
   ) => {
+    mockState.lastPath = path;
+    mockState.lastBody = body;
     onEvent({ event: "message_start", data: { message_id: "m1" } });
     onEvent({
       event: "citation",
@@ -102,10 +106,13 @@ beforeEach(() => {
   mockState.messages = [];
   mockState.agents = [];
   mockState.session = { id: "s1", agent_id: "a1" };
+  mockState.lastPath = "";
+  mockState.lastBody = null;
 });
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   useChatStreamStore.getState().clear();
 });
 
@@ -236,4 +243,59 @@ test("助手消息显示智能体徽标与接力标签", async () => {
   renderAt("s1");
   expect(await screen.findByText("甲")).toBeInTheDocument();
   expect(await screen.findByText(/接力.*乙/)).toBeInTheDocument();
+});
+
+test("图片先上传再随消息发送，用户消息附件经鉴权 blob 渲染", async () => {
+  mockState.messages = [
+    {
+      id: "u1",
+      role: "user",
+      blocks: [{ type: "text", content: "历史图片" }],
+      status: "done",
+      rating: null,
+      error: null,
+      created_at: "2026-09-12T10:00:00Z",
+      attachments: [{ id: "att9", original_name: "cat.png", kind: "image", size_bytes: 4 }],
+    },
+  ];
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes("/attachments")) {
+      return new Response(
+        JSON.stringify({ id: "att10", original_name: "dog.png", kind: "image", size_bytes: 4 }),
+        { status: 201 },
+      );
+    }
+    return new Response(new Blob(["img"]), { status: 200 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  URL.createObjectURL = vi.fn(() => "blob:mock");
+  URL.revokeObjectURL = vi.fn();
+
+  renderAt("s1");
+  // 历史用户消息的附件：<img> 不能带 Bearer，改为经 apiFetch 取 blob 后 objectURL
+  expect(await screen.findByAltText("附件图片")).toHaveAttribute("src", "blob:mock");
+  expect(fetchMock).toHaveBeenCalledWith("/api/v1/attachments/att9", expect.anything());
+
+  // 选择图片：先 POST 上传，返回 id 后显示预览 chip
+  await userEvent.upload(
+    screen.getByLabelText("选择图片"),
+    new File(["png"], "dog.png", { type: "image/png" }),
+  );
+  expect(await screen.findByAltText("图片预览")).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/sessions/s1/attachments",
+    expect.objectContaining({ method: "POST" }),
+  );
+
+  // 发送：body 携带 attachment_ids，发送后清空 chip
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "带图{Enter}");
+  await waitFor(() =>
+    expect(mockState.lastBody).toEqual({
+      content: "带图",
+      mentions: [],
+      attachment_ids: ["att10"],
+    }),
+  );
+  expect(mockState.lastPath).toBe("/api/v1/sessions/s1/messages");
+  await waitFor(() => expect(screen.queryByAltText("图片预览")).not.toBeInTheDocument());
 });

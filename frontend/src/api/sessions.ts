@@ -24,6 +24,14 @@ export interface Block {
   [key: string]: unknown;
 }
 
+export interface AttachmentInfo {
+  id: string;
+  original_name?: string;
+  kind?: string;
+  mime_type?: string;
+  size_bytes?: number;
+}
+
 export interface MessageItemData {
   id: string;
   role: string;
@@ -33,6 +41,7 @@ export interface MessageItemData {
   rating: number | null;
   error: string | null;
   created_at: string;
+  attachments?: AttachmentInfo[];
 }
 
 export function useSessions(query: string, archived = false) {

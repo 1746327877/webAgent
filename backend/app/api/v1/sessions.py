@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -12,9 +13,10 @@ from app.ai.model_manager import ModelManager
 from app.ai.providers.base import ModelProvider
 from app.ai.runtime import run_generation, sse
 from app.api.v1.deps import get_current_user
+from app.core.config import settings
 from app.core.db import get_db, get_session_factory
 from app.models.agent import Agent
-from app.models.session import Message, Session
+from app.models.session import Attachment, Message, Session
 from app.models.user import User
 from app.schemas.session import (
     MessageOut,
@@ -93,6 +95,29 @@ async def list_messages(
 class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=8000)
     mentions: list[uuid.UUID] = Field(default_factory=list, max_length=2)
+    attachment_ids: list[uuid.UUID] = Field(default_factory=list, max_length=3)
+
+
+async def _owned_pending_attachments(
+    db: AsyncSession, session: Session, ids: list[uuid.UUID]
+) -> list[Attachment]:
+    """本会话下尚未绑定消息的图片附件；顺序与请求一致；缺失或越权一律 404。"""
+    if not ids:
+        return []
+    rows = (
+        await db.scalars(
+            select(Attachment).where(
+                Attachment.id.in_(ids),
+                Attachment.session_id == session.id,
+                Attachment.message_id.is_(None),
+                Attachment.kind == "image",
+            )
+        )
+    ).all()
+    by_id = {row.id: row for row in rows}
+    if len(by_id) != len(set(ids)):
+        raise HTTPException(status_code=404, detail="附件不存在")
+    return [by_id[aid] for aid in dict.fromkeys(ids)]
 
 
 async def _relay_agent(db: AsyncSession, user: User, agent_id: uuid.UUID) -> Agent | None:
@@ -137,6 +162,8 @@ async def post_message(
     manager: Annotated[ModelManager | None, Depends(get_model_manager)],
 ):
     session = await session_service.get_owned_session(db, user, sid)
+    attachments = await _owned_pending_attachments(db, session, body.attachment_ids)
+    image_paths = [str(Path(settings.upload_dir) / att.file_path) for att in attachments]
 
     async def gen():
         async for chunk in run_generation(
@@ -146,6 +173,8 @@ async def post_message(
             user_content=body.content,
             session_factory=factory,
             model_manager=manager,
+            image_paths=image_paths or None,
+            attachment_ids=[att.id for att in attachments] or None,
         ):
             yield chunk
         for mention_id in body.mentions:

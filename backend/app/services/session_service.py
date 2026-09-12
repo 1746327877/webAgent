@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import Agent
-from app.models.session import Message, Session
+from app.models.session import Attachment, Message, Session
 from app.models.user import User
 
 
@@ -79,4 +79,27 @@ async def list_messages(db: AsyncSession, session: Session) -> list[Message]:
             select(Message).where(Message.session_id == session.id).order_by(Message.seq)
         )
     ).all()
-    return list(rows)
+    messages = list(rows)
+    # 一次批量查询按 message_id 分组，避免逐条消息查附件的 N+1
+    attachments_by_message: dict[uuid.UUID, list[dict]] = {}
+    if messages:
+        attachments = (
+            await db.scalars(
+                select(Attachment)
+                .where(Attachment.message_id.in_([m.id for m in messages]))
+                .order_by(Attachment.created_at)
+            )
+        ).all()
+        for attachment in attachments:
+            attachments_by_message.setdefault(attachment.message_id, []).append(
+                {
+                    "id": str(attachment.id),
+                    "original_name": attachment.original_name,
+                    "kind": attachment.kind,
+                    "mime_type": attachment.mime_type,
+                    "size_bytes": attachment.size_bytes,
+                }
+            )
+    for message in messages:
+        message.attachments = attachments_by_message.get(message.id, [])
+    return messages

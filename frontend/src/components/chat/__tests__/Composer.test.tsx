@@ -14,7 +14,7 @@ test("Enter 触发发送并清空输入", async () => {
   render(<Composer onSend={onSend} onStop={vi.fn()} generating={false} />);
   const input = screen.getByPlaceholderText("输入问题，Enter 发送");
   await userEvent.type(input, "你好{Enter}");
-  expect(onSend).toHaveBeenCalledWith("你好", []);
+  expect(onSend).toHaveBeenCalledWith("你好", [], []);
   expect((input as HTMLInputElement).value).toBe("");
 });
 
@@ -35,14 +35,14 @@ test("@ 弹出并选择后提交携带 mention", async () => {
   expect((input as HTMLInputElement).value).toContain("@深度思考");
   await userEvent.type(input, " 帮我看看");
   await userEvent.type(input, "{Enter}");
-  expect(onSend).toHaveBeenCalledWith("@深度思考 帮我看看", ["a1"]);
+  expect(onSend).toHaveBeenCalledWith("@深度思考 帮我看看", ["a1"], []);
 });
 
 test("无 @ 不产生 mentions", async () => {
   const onSend = vi.fn();
   render(<Composer onSend={onSend} onStop={vi.fn()} generating={false} agents={AGENTS} />);
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "hello{Enter}");
-  expect(onSend).toHaveBeenCalledWith("hello", []);
+  expect(onSend).toHaveBeenCalledWith("hello", [], []);
 });
 
 test("最多提交 2 个 mention，第三次选择被拒绝", async () => {
@@ -59,5 +59,31 @@ test("最多提交 2 个 mention，第三次选择被拒绝", async () => {
   // 第三次选择被拒绝：文本与已选 id 均不变
   expect((input as HTMLInputElement).value).not.toContain("@翻译助手");
   await userEvent.type(input, "{Escape}{Enter}");
-  expect(onSend).toHaveBeenCalledWith("@深度思考@代码专家@", ["a1", "a2"]);
+  expect(onSend).toHaveBeenCalledWith("@深度思考@代码专家@", ["a1", "a2"], []);
+});
+
+test("选择图片上报 onAttach，chip 预览可移除，发送携带 attachmentIds", async () => {
+  const onAttach = vi.fn();
+  const onRemoveAttachment = vi.fn();
+  const onSend = vi.fn();
+  render(
+    <Composer
+      onSend={onSend}
+      onStop={vi.fn()}
+      generating={false}
+      attachments={[{ id: "att1", previewUrl: "blob:preview" }]}
+      onAttach={onAttach}
+      onRemoveAttachment={onRemoveAttachment}
+    />,
+  );
+  expect(screen.getByAltText("图片预览")).toHaveAttribute("src", "blob:preview");
+  await userEvent.click(screen.getByRole("button", { name: "移除图片" }));
+  expect(onRemoveAttachment).toHaveBeenCalledWith("att1");
+
+  const file = new File(["png"], "cat.png", { type: "image/png" });
+  await userEvent.upload(screen.getByLabelText("选择图片"), file);
+  expect(onAttach).toHaveBeenCalledWith(file);
+
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "看图{Enter}");
+  expect(onSend).toHaveBeenCalledWith("看图", [], ["att1"]);
 });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,7 +13,7 @@ import { apiFetch } from "@/lib/api";
 import { streamRequest } from "@/lib/stream";
 import type { SSEEvent } from "@/lib/sse";
 import type { Citation } from "@/lib/citations";
-import Composer from "@/components/chat/Composer";
+import Composer, { type PendingAttachment } from "@/components/chat/Composer";
 import MessageActions from "@/components/chat/MessageActions";
 import MessageList from "@/components/chat/MessageList";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,18 @@ export default function ChatView() {
     clearActive,
   } = useChatStreamStore();
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const attachmentsRef = useRef<PendingAttachment[]>([]);
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+  // 组件卸载时释放尚未发送的预览 objectURL
+  useEffect(
+    () => () => {
+      attachmentsRef.current.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    },
+    [],
+  );
   const ownsActive = Boolean(active && active.sessionId === sessionId);
   // 错误只归其产生时的会话：发送创建场景的 error.sessionId 为 null，仅无会话时显示
   const scopedError = error && error.sessionId === (sessionId ?? null) ? error.message : null;
@@ -113,7 +125,45 @@ export default function ChatView() {
     }
   }
 
-  async function send(text: string, mentions: string[] = []) {
+  async function attach(file: File) {
+    let target = sessionId;
+    if (!target) {
+      try {
+        const created = await createSession.mutateAsync();
+        target = created.id;
+        navigate(`/sessions/${created.id}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "图片上传失败", target ?? null);
+        return;
+      }
+    }
+    const form = new FormData();
+    form.append("file", file);
+    const res = await apiFetch(`/api/v1/sessions/${target}/attachments`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      setError(`图片上传失败（HTTP ${res.status}）`, target);
+      return;
+    }
+    const data = (await res.json()) as { id: string };
+    setAttachments((prev) => [
+      ...prev,
+      { id: data.id, previewUrl: URL.createObjectURL(file) },
+    ]);
+  }
+
+  function removeAttachment(id: string) {
+    const hit = attachments.find((a) => a.id === id);
+    if (hit) URL.revokeObjectURL(hit.previewUrl);
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  async function send(text: string, mentions: string[] = [], attachmentIds: string[] = []) {
+    // 发送即清空 chips 并释放预览 URL；持久化缩略图改走鉴权 blob
+    attachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    setAttachments([]);
     let target = sessionId;
     if (!target) {
       try {
@@ -127,7 +177,7 @@ export default function ChatView() {
     }
     await runStream(
       `/api/v1/sessions/${target}/messages`,
-      { content: text, mentions },
+      { content: text, mentions, attachment_ids: attachmentIds },
       target,
       "发送失败",
     );
@@ -255,7 +305,15 @@ export default function ChatView() {
           />
         )}
         {scopedError && <p className="px-4 py-2 text-sm text-red-500">出错：{scopedError}</p>}
-        <Composer onSend={send} onStop={stop} generating={ownsActive} agents={agents} />
+        <Composer
+          onSend={send}
+          onStop={stop}
+          generating={ownsActive}
+          agents={agents}
+          attachments={attachments}
+          onAttach={attach}
+          onRemoveAttachment={removeAttachment}
+        />
       </div>
       {openCitation && (
         <aside

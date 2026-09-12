@@ -1,8 +1,11 @@
 import asyncio
+import base64
 import json
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import replace
+from pathlib import Path
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -11,7 +14,8 @@ from app.ai.agent_config import EffectiveConfig, build_agent_config, resolve_eff
 from app.ai.model_manager import ModelManager
 from app.ai.providers.base import ChatRequest, ModelProvider
 from app.ai.tools.registry import tools_payload
-from app.models.session import Message, Session
+from app.core.config import settings
+from app.models.session import Attachment, Message, Session
 from app.models.user import User
 
 FLUSH_INTERVAL_S = 0.2
@@ -164,6 +168,11 @@ def _text_of(blocks: list[dict]) -> str:
     return "".join(b.get("content", "") for b in blocks if b.get("type") == "text")
 
 
+def _encode_image(path: str) -> str:
+    """Ollama images 字段要求无前缀的 base64。"""
+    return base64.b64encode(Path(path).read_bytes()).decode()
+
+
 def _merge_usage(acc: dict | None, new: dict | None) -> dict | None:
     if new is None:
         return acc
@@ -249,10 +258,14 @@ async def run_generation(
     model_manager: ModelManager | None = None,
     agent_override: uuid.UUID | None = None,
     relay_instruction: str | None = None,
+    image_paths: list[str] | None = None,
+    attachment_ids: list[uuid.UUID] | None = None,
 ) -> AsyncIterator[str]:
     """user_content=None 时仅生成助手消息（重新生成/接力场景）。
 
     agent_override 指定被 @ 的智能体（接力回合），relay_instruction 注入接力指令。
+    image_paths 非空时该轮切到视觉模型，并把图片 base64 附到最后一条 user 消息；
+    attachment_ids 在用户消息落库后回填 message_id。
     """
     user = await db.get(User, session.user_id)
     user_name = user.username if user else ""
@@ -267,6 +280,21 @@ async def run_generation(
         )
     else:
         cfg = await resolve_effective_config(db, session, user_name=user_name)
+    if image_paths:
+        # 有图回合按需切到视觉模型；无 agent 或未配置时回退全局设置
+        from app.models import Agent as AgentModel
+
+        vision_agent = (
+            await db.get(AgentModel, agent_override or session.agent_id)
+            if (agent_override or session.agent_id)
+            else None
+        )
+        vision_model = (
+            (vision_agent.model_config or {}).get("vision_model")
+            if vision_agent
+            else None
+        )
+        cfg = replace(cfg, model=vision_model or settings.vision_model)
     exclude_ids: set[uuid.UUID] = set()
     if user_content is not None:
         user_msg = Message(
@@ -279,6 +307,13 @@ async def run_generation(
         # 独立事务提交：与 assistant 占位分开；历史排序以 seq 为准，不依赖 created_at
         await db.commit()
         exclude_ids.add(user_msg.id)
+        if attachment_ids:
+            await db.execute(
+                update(Attachment)
+                .where(Attachment.id.in_(attachment_ids))
+                .values(message_id=user_msg.id)
+            )
+            await db.commit()
 
     assistant = Message(
         session_id=session.id,
@@ -308,6 +343,13 @@ async def run_generation(
         # message_start 也放在 try 内：客户端在首个事件前断连时，GeneratorExit
         # 能命中下方分支 finalize，避免留下永远 streaming 的僵尸消息
         yield sse("message_start", {"message_id": str(assistant_id), "role": "assistant"})
+        image_payload: list[str] = []
+        if image_paths:
+            image_payload = list(
+                await asyncio.gather(
+                    *(asyncio.to_thread(_encode_image, path) for path in image_paths)
+                )
+            )
         messages = (
             [{"role": "system", "content": cfg.system_prompt}] if cfg.system_prompt else []
         )
@@ -317,7 +359,10 @@ async def run_generation(
             db, session.id, exclude_ids=exclude_ids, rounds=cfg.history_rounds
         )
         if user_content is not None:
-            messages.append({"role": "user", "content": user_content})
+            user_message: dict = {"role": "user", "content": user_content}
+            if image_payload:
+                user_message["images"] = image_payload
+            messages.append(user_message)
 
         retrieval_chunks: list = []
         embedder = _provider_embedder(provider)

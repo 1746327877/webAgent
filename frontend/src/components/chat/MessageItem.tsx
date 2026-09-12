@@ -3,6 +3,13 @@ import type { Block, MessageItemData } from "@/api/sessions";
 import BlockRenderer from "@/components/chat/BlockRenderer";
 import CitationList from "@/components/chat/CitationList";
 import type { Citation } from "@/lib/citations";
+import { useAttachmentUrl } from "@/lib/useAttachmentUrl";
+
+function AttachmentThumb({ id }: { id: string }) {
+  const url = useAttachmentUrl(id);
+  if (!url) return null;
+  return <img src={url} alt="附件图片" className="h-24 w-24 rounded-md object-cover" />;
+}
 
 /** 持久化 citation 块 → Citation（字段缺失时兜底为空串/0，避免渲染崩溃） */
 function toCitation(block: Block): Citation {
@@ -32,8 +39,16 @@ export default function MessageItem({
 }) {
   if (message.role === "user") {
     const text = message.blocks.find((b) => b.type === "text")?.content ?? "";
+    const attachments = message.attachments ?? [];
     return (
       <div className="flex flex-col items-end gap-1">
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-1">
+            {attachments.map((a) => (
+              <AttachmentThumb key={a.id} id={a.id} />
+            ))}
+          </div>
+        )}
         <span className="max-w-[80%] rounded-lg bg-primary px-3 py-2 text-primary-foreground">
           {text}
         </span>
