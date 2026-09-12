@@ -1,6 +1,7 @@
 from app.models.agent import Agent, AgentVersion
 from app.models.base import Base
 from app.models.knowledge import AgentKB, Chunk, Document, KnowledgeBase
+from app.models.model_event import ModelEvent
 from app.models.session import Attachment, Message, Session
 from app.models.span import Span
 from app.models.tool import AgentTool, Tool
@@ -17,6 +18,7 @@ __all__ = [
     "Document",
     "KnowledgeBase",
     "Message",
+    "ModelEvent",
     "RefreshToken",
     "Session",
     "Span",

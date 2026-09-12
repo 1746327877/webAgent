@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     upload_dir: str = "./uploads"
     embedding_model: str = "bge-m3"
+    vision_model: str = "qwen2.5vl:7b"
+    model_keep_alive: str = "15m"
+    vram_poll_seconds: int = 10
 
 
 settings = Settings()
