@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.runtime import CANCEL_FLAGS
+from app.ai.runtime import CANCEL_FLAGS, CANCEL_SESSIONS
 from app.api.v1.deps import get_current_user
 from app.core.db import get_db
 from app.models.session import Session
@@ -30,8 +30,11 @@ async def stop_message(
     message = await message_service.get_owned_message(db, user, mid)
     if message.role != "assistant":
         return {"status": "ignored"}
-    if message.status == "streaming":
-        CANCEL_FLAGS[message.id] = True
+    # 停止可能发生在主回合已 done、接力尚未启动的空档：不设 status 门槛。
+    # 已完成消息的标记无副作用（CANCEL_FLAGS 在生成中被 pop，或随进程丢弃；
+    # 会话标记在 post_message 开始处 discard，不会被下一次请求误消费）。
+    CANCEL_FLAGS[message.id] = True
+    CANCEL_SESSIONS.add(message.session_id)
     return {"status": "ok"}
 
 

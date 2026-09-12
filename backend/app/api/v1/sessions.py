@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.ai.deps import get_model_manager, get_provider
 from app.ai.model_manager import ModelManager
 from app.ai.providers.base import ModelProvider
-from app.ai.runtime import run_generation, sse
+from app.ai.runtime import CANCEL_SESSIONS, run_generation, sse
 from app.api.v1.deps import get_current_user
 from app.core.config import settings
 from app.core.db import get_db, get_session_factory
@@ -166,6 +166,8 @@ async def post_message(
     image_paths = [str(Path(settings.upload_dir) / att.file_path) for att in attachments]
 
     async def gen():
+        # 消费上一轮遗留的会话级停止标记，避免误杀本次请求的接力
+        CANCEL_SESSIONS.discard(session.id)
         async for chunk in run_generation(
             db,
             session,
@@ -178,6 +180,9 @@ async def post_message(
         ):
             yield chunk
         for mention_id in body.mentions:
+            if session.id in CANCEL_SESSIONS:
+                CANCEL_SESSIONS.discard(session.id)
+                break  # 主回合被停止：不再启动接力
             agent = await _relay_agent(db, user, mention_id)
             if agent is None:
                 yield sse("error", {"message": "无法接力：智能体不可用"})

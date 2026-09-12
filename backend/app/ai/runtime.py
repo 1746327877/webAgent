@@ -25,6 +25,7 @@ TOOL_TIMEOUT_S = 30.0
 TOOL_RESULT_MAX = 8000
 TOOL_PREVIEW_LEN = 200
 CANCEL_FLAGS: dict[uuid.UUID, bool] = {}
+CANCEL_SESSIONS: set[uuid.UUID] = set()  # 会话级停止标记，供排队中的接力回合消费
 
 Embedder = Callable[[list[str]], Awaitable[list[list[float]]]]
 
@@ -599,7 +600,9 @@ async def run_generation(
         and user_content is not None
         and status != "error"
         and session.title == "新对话"
+        and session.id not in CANCEL_SESSIONS
     ):
+        # 会话级停止待消费（接力排队空档被点停）：不再排队标题生成
         from app.services.title_service import generate_title
 
         asyncio.create_task(
