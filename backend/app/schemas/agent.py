@@ -57,12 +57,30 @@ class AgentOut(BaseModel):
     current_version: int
     variables: list[str] = []
     tool_slugs: list[str] = []
+    kb_bindings: list[dict] = []
     created_at: datetime
     updated_at: datetime
 
 
 class ToolsIn(BaseModel):
     slugs: list[str] = []
+
+
+class KbBindingIn(BaseModel):
+    kb_id: uuid.UUID
+    top_k: int = Field(5, ge=1, le=20)
+    score_threshold: float = Field(0.3, ge=0, le=1)
+
+
+class KbBindingOut(BaseModel):
+    kb_id: uuid.UUID
+    name: str
+    top_k: int
+    score_threshold: float
+
+
+class KbsIn(BaseModel):
+    bindings: list[KbBindingIn] = []
 
 
 class AgentVersionOut(BaseModel):

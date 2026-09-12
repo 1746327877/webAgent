@@ -18,12 +18,17 @@ const mockAgent = vi.hoisted(() => ({
     current_version: 1,
     variables: [] as string[],
     tool_slugs: [] as string[],
+    kb_bindings: [] as { kb_id: string; name: string; top_k: number; score_threshold: number }[],
     created_at: "t0",
     updated_at: "t1",
   },
 }));
 
 vi.mock("@/components/ui/slider", () => ({ Slider: () => null }));
+
+vi.mock("@/api/kbs", () => ({
+  useKbs: () => ({ data: [] }),
+}));
 
 vi.mock("@/api/agents", () => ({
   useAgent: () => ({ data: mockAgent.current, isLoading: false, error: null }),
@@ -34,6 +39,7 @@ vi.mock("@/api/agents", () => ({
   useDeleteAgent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePublishAgent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSetAgentTools: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSetAgentKbs: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAgentVersions: () => ({ data: [], isLoading: false, error: null }),
   useRollbackAgent: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));

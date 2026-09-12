@@ -79,6 +79,34 @@ async def test_update_tools_and_tool_slugs(client, auth_headers, session_maker):
     assert r2.json()["slugs"] == []
 
 
+async def test_set_agent_kbs_and_kb_bindings_in_out(client, auth_headers):
+    kb = (await client.post("/api/v1/kbs", json={"name": "KB1"}, headers=auth_headers)).json()
+    aid = (await client.post("/api/v1/agents", json=AGENT, headers=auth_headers)).json()["id"]
+    r = await client.put(
+        f"/api/v1/agents/{aid}/kbs",
+        json={"bindings": [{"kb_id": kb["id"], "top_k": 3}]},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200 and len(r.json()["bindings"]) == 1
+    detail = (await client.get(f"/api/v1/agents/{aid}", headers=auth_headers)).json()
+    assert detail["kb_bindings"][0]["kb_id"] == kb["id"]
+    assert detail["kb_bindings"][0]["top_k"] == 3
+    # 替换语义
+    r2 = await client.put(f"/api/v1/agents/{aid}/kbs", json={"bindings": []}, headers=auth_headers)
+    assert r2.json()["bindings"] == []
+
+    # 他人 KB → 404
+    from tests.test_sessions_api import make_user
+
+    other = await make_user(client, "bob")
+    r3 = await client.put(
+        f"/api/v1/agents/{aid}/kbs",
+        json={"bindings": [{"kb_id": kb["id"]}]},
+        headers=other,
+    )
+    assert r3.status_code == 404
+
+
 async def test_models_endpoint(client, auth_headers):
     class P(FakeProvider):
         async def list_available(self):

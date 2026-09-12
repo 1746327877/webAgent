@@ -1,6 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiJson } from "@/lib/api";
 
+export interface KbBinding {
+  kb_id: string;
+  name: string;
+  top_k: number;
+  score_threshold: number;
+}
+
+export interface KbBindingInput {
+  kb_id: string;
+  top_k: number;
+  score_threshold?: number;
+}
+
 export interface AgentItem {
   id: string;
   name: string;
@@ -15,6 +28,7 @@ export interface AgentItem {
   current_version: number;
   variables: string[];
   tool_slugs: string[];
+  kb_bindings: KbBinding[];
   created_at: string;
   updated_at: string;
 }
@@ -102,6 +116,21 @@ export function useSetAgentTools() {
       }),
     onSuccess: (_data, { id }) => {
       qc.invalidateQueries({ queryKey: ["agents", id] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function useSetAgentKbs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, bindings }: { agentId: string; bindings: KbBindingInput[] }) =>
+      apiJson<{ bindings: KbBinding[] }>(`/api/v1/agents/${agentId}/kbs`, {
+        method: "PUT",
+        body: JSON.stringify({ bindings }),
+      }),
+    onSuccess: (_data, { agentId }) => {
+      qc.invalidateQueries({ queryKey: ["agents", agentId] });
       qc.invalidateQueries({ queryKey: ["agents"] });
     },
   });

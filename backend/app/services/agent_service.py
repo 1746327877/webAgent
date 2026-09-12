@@ -5,7 +5,16 @@ from fastapi import HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Agent, AgentTool, AgentVersion, Message, Session, Tool
+from app.models import (
+    Agent,
+    AgentKB,
+    AgentTool,
+    AgentVersion,
+    KnowledgeBase,
+    Message,
+    Session,
+    Tool,
+)
 from app.models.user import User
 
 VAR_RE = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
@@ -98,6 +107,52 @@ async def set_tools(db: AsyncSession, agent: Agent, slugs: list[str]) -> list[st
             bound.append(slug)
     await db.commit()
     return bound
+
+
+async def set_kbs(db: AsyncSession, agent: Agent, user: User, bindings: list) -> list[AgentKB]:
+    """替换语义：先校验全部 KB 归属，再删除旧绑定并写入新绑定。"""
+    rows: list[AgentKB] = []
+    for binding in bindings:
+        kb = await db.scalar(
+            select(KnowledgeBase).where(
+                KnowledgeBase.id == binding.kb_id, KnowledgeBase.owner_id == user.id
+            )
+        )
+        if kb is None:
+            raise HTTPException(status_code=404, detail="知识库不存在")
+        rows.append(
+            AgentKB(
+                agent_id=agent.id,
+                kb_id=kb.id,
+                top_k=binding.top_k,
+                score_threshold=binding.score_threshold,
+            )
+        )
+    await db.execute(delete(AgentKB).where(AgentKB.agent_id == agent.id))
+    for row in rows:
+        db.add(row)
+    await db.commit()
+    return rows
+
+
+async def list_kb_bindings(db: AsyncSession, agent_id) -> list[dict]:
+    rows = (
+        await db.execute(
+            select(AgentKB.kb_id, KnowledgeBase.name, AgentKB.top_k, AgentKB.score_threshold)
+            .join(KnowledgeBase, KnowledgeBase.id == AgentKB.kb_id)
+            .where(AgentKB.agent_id == agent_id)
+            .order_by(KnowledgeBase.name, AgentKB.kb_id)
+        )
+    ).all()
+    return [
+        {
+            "kb_id": row.kb_id,
+            "name": row.name,
+            "top_k": row.top_k,
+            "score_threshold": row.score_threshold,
+        }
+        for row in rows
+    ]
 
 
 def _snapshot(agent: Agent, tool_slugs: list[str]) -> dict:

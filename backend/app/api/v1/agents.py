@@ -12,6 +12,7 @@ from app.schemas.agent import (
     AgentOut,
     AgentUpdateIn,
     AgentVersionOut,
+    KbsIn,
     PublishOut,
     RollbackIn,
     ToolsIn,
@@ -25,6 +26,7 @@ async def _to_out(db: AsyncSession, agent) -> AgentOut:
     out = AgentOut.model_validate(agent)
     out.variables = agent_service.extract_variables(agent.system_prompt)
     out.tool_slugs = await agent_service._tool_slugs(db, agent.id)
+    out.kb_bindings = await agent_service.list_kb_bindings(db, agent.id)
     return out
 
 
@@ -76,6 +78,18 @@ async def set_tools(
     agent = await agent_service.get_owned_agent(db, user, aid)
     bound = await agent_service.set_tools(db, agent, body.slugs)
     return {"slugs": bound}
+
+
+@router.put("/{aid}/kbs")
+async def set_kbs(
+    aid: uuid.UUID,
+    body: KbsIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    agent = await agent_service.get_owned_agent(db, user, aid)
+    await agent_service.set_kbs(db, agent, user, body.bindings)
+    return {"bindings": await agent_service.list_kb_bindings(db, agent.id)}
 
 
 @router.delete("/{aid}", status_code=204)

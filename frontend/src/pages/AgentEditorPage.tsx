@@ -12,6 +12,7 @@ import {
   type ToolInfo,
 } from "@/api/agents";
 import AgentForm from "@/components/agents/AgentForm";
+import KbBindings from "@/components/agents/KbBindings";
 import ToolsMatrix from "@/components/agents/ToolsMatrix";
 import VersionsDrawer from "@/components/agents/VersionsDrawer";
 import { Badge } from "@/components/ui/badge";
@@ -192,6 +193,23 @@ export default function AgentEditorPage() {
             key={`${agent.id}:${agent.updated_at}`}
             agent={agent}
             tools={tools ?? []}
+            onNotice={(message) => {
+              setError(null);
+              setNotice(message);
+            }}
+            onError={(message) => {
+              setNotice(null);
+              setError(message);
+            }}
+          />
+        )}
+
+        {!isNew && agent && (
+          <KbBindings
+            key={`${agent.id}:${agent.updated_at}`}
+            agentId={agent.id}
+            bindings={agent.kb_bindings ?? []}
+            editable
             onNotice={(message) => {
               setError(null);
               setNotice(message);
