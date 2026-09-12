@@ -58,6 +58,9 @@ async def test_hybrid_search_rrf_and_channel_hits(session_maker):
     # 语义第一：向量通道 rank1；关键词条：全文通道 rank1 → 双通道命中
     assert by_content["并发编程关键词命中"].channel_hits == 2
     assert by_content["完全语义相关"].channel_hits == 1
+    # 双通道命中者 RRF 分最高：必须排第一（不能只靠同文档 source 恒真断言）
+    assert chunks[0].content == "并发编程关键词命中"
+    assert chunks[0].rrf_score > chunks[1].rrf_score
     assert chunks[0].source == "java.md"
 
 

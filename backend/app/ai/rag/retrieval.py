@@ -60,7 +60,7 @@ async def hybrid_search(
         )
         SELECT c.id, c.content, c.meta, d.filename, f.rrf_score, f.channel_hits
         FROM fused f JOIN chunks c ON c.id = f.id JOIN documents d ON d.id = c.document_id
-        ORDER BY f.rrf_score DESC LIMIT :top_k
+        ORDER BY f.rrf_score DESC, c.id LIMIT :top_k
         """
     )
     async with session_maker() as db:
