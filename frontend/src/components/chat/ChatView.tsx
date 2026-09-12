@@ -11,6 +11,7 @@ import {
 import { useAgent, useAgents } from "@/api/agents";
 import { apiFetch } from "@/lib/api";
 import { streamRequest } from "@/lib/stream";
+import { createTokenBuffer } from "@/lib/tokenBuffer";
 import type { SSEEvent } from "@/lib/sse";
 import type { Citation } from "@/lib/citations";
 import Composer, { MAX_ATTACHMENTS, type PendingAttachment } from "@/components/chat/Composer";
@@ -50,6 +51,18 @@ export default function ChatView() {
     clear,
     clearActive,
   } = useChatStreamStore();
+  // 流式 token/thinking 按帧合批提交，避免每 delta 一次 store 更新（高吞吐下会拖垮渲染）
+  const [degraded, setDegraded] = useState(false);
+  const bufferRef = useRef<ReturnType<typeof createTokenBuffer> | null>(null);
+  if (bufferRef.current === null) {
+    bufferRef.current = createTokenBuffer((batch) => {
+      if (batch.text) appendToken(batch.text, batch.messageId);
+      if (batch.thinking) appendThinking(batch.thinking, batch.messageId);
+      if (bufferRef.current?.degraded) setDegraded(true);
+    });
+  }
+  // 卸载时取消已排帧，避免回调打到已卸载组件上
+  useEffect(() => () => bufferRef.current?.cancel(), []);
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const attachmentsRef = useRef<PendingAttachment[]>([]);
@@ -84,10 +97,10 @@ export default function ChatView() {
       start((evt.data as { message_id: string }).message_id, targetSession);
     } else if (evt.event === "token") {
       const data = evt.data as { delta: string; message_id: string };
-      appendToken(data.delta, data.message_id);
+      bufferRef.current?.push("text", data.delta, data.message_id);
     } else if (evt.event === "thinking") {
       const data = evt.data as { delta: string; message_id: string };
-      appendThinking(data.delta, data.message_id);
+      bufferRef.current?.push("thinking", data.delta, data.message_id);
     } else if (evt.event === "citation") {
       const data = evt.data as Citation & { message_id: string };
       appendCitation(data, data.message_id);
@@ -120,6 +133,8 @@ export default function ChatView() {
   /** 清掉旧流后请求 SSE，结束后清叠加层并刷新消息/会话列表（send 与 regenerate 共用） */
   async function runStream(path: string, body: unknown, targetSession: string, fallbackError: string) {
     clear();
+    setDegraded(false);
+    bufferRef.current?.cancel();
     let streamId: string | undefined;
     try {
       await streamRequest(path, body, (evt) => {
@@ -131,6 +146,8 @@ export default function ChatView() {
     } catch (err) {
       setError(err instanceof Error ? err.message : fallbackError, targetSession);
     } finally {
+      // 先提交最后一个不足一帧的批次，再清叠加层，避免丢尾部 token
+      bufferRef.current?.flushNow();
       clearActive(streamId);
       await queryClient.invalidateQueries({ queryKey: ["messages", targetSession] });
       await queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -314,6 +331,8 @@ export default function ChatView() {
             agentOf={messageAgent}
             isRelayOf={messageIsRelay}
             onOpenCitation={setOpenCitation}
+            degraded={degraded}
+            onRetry={regenerate}
             renderActions={(m) =>
               m.status === "streaming" ? null : (
                 <MessageActions

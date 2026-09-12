@@ -30,12 +30,18 @@ export default function MessageItem({
   onOpenCitation,
   agent,
   isRelay,
+  degraded = false,
+  onRetry,
 }: {
   message: MessageItemData;
   actions?: ReactNode;
   onOpenCitation?: (citation: Citation) => void;
   agent?: { emoji: string; name: string };
   isRelay?: boolean;
+  /** 高吞吐降级：流式 text 块纯文本渲染 */
+  degraded?: boolean;
+  /** 错误态重试：点击「重试」按钮回调消息 id */
+  onRetry?: (id: string) => void;
 }) {
   if (message.role === "user") {
     const text = message.blocks.find((b) => b.type === "text")?.content ?? "";
@@ -82,10 +88,17 @@ export default function MessageItem({
             <CitationList key="citations" citations={citations} onOpen={onOpenCitation} />
           );
         }
-        return <BlockRenderer key={i} block={b} maxRef={maxRef} onCitation={openByRef} streaming={message.status === "streaming"} />;
+        return <BlockRenderer key={i} block={b} maxRef={maxRef} onCitation={openByRef} streaming={message.status === "streaming"} degraded={degraded && message.status === "streaming"} />;
       })}
       {message.status === "error" && (
-        <p className="text-sm text-red-500">生成失败，可点「重新生成」重试</p>
+        <p className="text-sm text-red-500">
+          生成失败，可点「重新生成」重试
+          {onRetry && (
+            <button type="button" className="ml-2 underline" onClick={() => onRetry(message.id)}>
+              重试
+            </button>
+          )}
+        </p>
       )}
       {message.status === "stopped" && (
         <p className="text-xs text-muted-foreground">已停止</p>

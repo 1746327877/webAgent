@@ -8,6 +8,7 @@ export default function BlockRenderer({
   maxRef = 0,
   onCitation,
   streaming = false,
+  degraded = false,
 }: {
   block: Block;
   /** 传给 text 分支：本消息已有的最大引用编号 */
@@ -15,6 +16,8 @@ export default function BlockRenderer({
   onCitation?: (ref: number) => void;
   /** 流式输出中：thinking 块自动展开并显示「思考中…」 */
   streaming?: boolean;
+  /** 高吞吐降级：text 块跳过 markdown 解析，直接纯文本渲染 */
+  degraded?: boolean;
 }) {
   const thinkingDefaultOpen = useUiStore((s) => s.thinkingDefaultOpen);
   const [thinkingOpen, setThinkingOpen] = useState(thinkingDefaultOpen);
@@ -44,6 +47,9 @@ export default function BlockRenderer({
     );
   }
   if (block.type === "text") {
+    if (degraded) {
+      return <p className="whitespace-pre-wrap text-sm">{block.content ?? ""}</p>;
+    }
     return (
       <MarkdownContent content={block.content ?? ""} maxRef={maxRef} onCitation={onCitation} />
     );

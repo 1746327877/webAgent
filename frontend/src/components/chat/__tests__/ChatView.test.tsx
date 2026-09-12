@@ -30,6 +30,7 @@ const mockState = vi.hoisted(() => ({
   session: { id: "s1", agent_id: "a1" } as { id: string; agent_id: string | null },
   lastPath: "",
   lastBody: null as unknown,
+  tokens: [] as string[],
 }));
 
 vi.mock("@/api/sessions", () => ({
@@ -82,6 +83,9 @@ vi.mock("@/lib/stream", () => ({
       data: { message_id: "m1", id: "c1", status: "ok", elapsed_ms: 12, preview: "命中" },
     });
     onEvent({ event: "token", data: { message_id: "m1", delta: "答案[1]" } });
+    for (const delta of mockState.tokens) {
+      onEvent({ event: "token", data: { message_id: "m1", delta } });
+    }
     await new Promise(() => {});
   },
 }));
@@ -130,6 +134,7 @@ beforeEach(() => {
   mockState.session = { id: "s1", agent_id: "a1" };
   mockState.lastPath = "";
   mockState.lastBody = null;
+  mockState.tokens = [];
 });
 
 afterEach(() => {
@@ -371,4 +376,19 @@ test("切换会话清空输入框草稿", async () => {
   expect(input().value).toBe("不该带到新会话");
   await userEvent.click(screen.getByRole("button", { name: "切换会话" }));
   await waitFor(() => expect(input().value).toBe(""));
+});
+
+test("token 经 rAF 合帧后完整渲染", async () => {
+  mockState.tokens = ["合", "帧"];
+  renderAt("s1");
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "hi{Enter}");
+  expect(await screen.findByText(/合帧/)).toBeInTheDocument();
+});
+
+test("单帧超大 token 量降级为纯文本渲染", async () => {
+  mockState.tokens = ["**不加粗**" + "长".repeat(9000)];
+  renderAt("s1");
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "hi{Enter}");
+  expect(await screen.findByText(/\*\*不加粗\*\*/)).toBeInTheDocument();
+  expect(screen.queryByText("不加粗", { selector: "strong" })).not.toBeInTheDocument();
 });

@@ -77,3 +77,8 @@ test("默认展开设置对历史消息生效", () => {
   render(<BlockRenderer block={{ type: "thinking", content: "历史推理", duration_ms: 1200 }} />);
   expect(screen.getByText("历史推理").closest("details")).toHaveAttribute("open");
 });
+
+test("degraded 时纯文本渲染不解析 markdown", () => {
+  render(<BlockRenderer block={{ type: "text", content: "**粗体**" }} degraded />);
+  expect(screen.getByText("**粗体**")).toBeInTheDocument();
+});

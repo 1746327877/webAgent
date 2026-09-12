@@ -10,6 +10,10 @@ interface Props {
   onOpenCitation?: (citation: Citation) => void;
   agentOf?: (m: MessageItemData) => { emoji: string; name: string } | undefined;
   isRelayOf?: (m: MessageItemData) => boolean;
+  /** 高吞吐降级：流式 text 块纯文本渲染 */
+  degraded?: boolean;
+  /** 错误态重试回调（消息 id） */
+  onRetry?: (id: string) => void;
 }
 
 export default function MessageList({
@@ -18,6 +22,8 @@ export default function MessageList({
   onOpenCitation,
   agentOf,
   isRelayOf,
+  degraded,
+  onRetry,
 }: Props) {
   return (
     <Virtuoso
@@ -33,6 +39,8 @@ export default function MessageList({
             onOpenCitation={onOpenCitation}
             agent={agentOf?.(m)}
             isRelay={isRelayOf?.(m)}
+            degraded={degraded}
+            onRetry={onRetry}
           />
         </div>
       )}
