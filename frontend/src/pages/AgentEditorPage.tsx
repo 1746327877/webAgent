@@ -4,11 +4,63 @@ import {
   useAgent,
   useCreateAgent,
   useDeleteAgent,
+  usePublishAgent,
+  useSetAgentTools,
+  useTools,
   useUpdateAgent,
   type AgentItem,
+  type ToolInfo,
 } from "@/api/agents";
 import AgentForm from "@/components/agents/AgentForm";
+import ToolsMatrix from "@/components/agents/ToolsMatrix";
+import VersionsDrawer from "@/components/agents/VersionsDrawer";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+
+function ToolBindings({
+  agent,
+  tools,
+  onNotice,
+  onError,
+}: {
+  agent: AgentItem;
+  tools: ToolInfo[];
+  onNotice: (message: string) => void;
+  onError: (message: string) => void;
+}) {
+  const initial = agent.tool_slugs ?? [];
+  const setTools = useSetAgentTools();
+  const [draft, setDraft] = useState<string[]>(initial);
+  const dirty = [...draft].sort().join(",") !== [...initial].sort().join(",");
+
+  async function onSave() {
+    try {
+      const res = await setTools.mutateAsync({ id: agent.id, slugs: draft });
+      setDraft(res.slugs ?? []);
+      onNotice("工具绑定已保存");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "保存工具绑定失败");
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-medium">工具绑定</h2>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={setTools.isPending || !dirty}
+          onClick={onSave}
+        >
+          {setTools.isPending ? "保存中…" : "保存工具绑定"}
+        </Button>
+      </div>
+      <ToolsMatrix tools={tools} value={draft} onChange={setDraft} disabled={setTools.isPending} />
+    </section>
+  );
+}
 
 export default function AgentEditorPage() {
   const { agentId } = useParams();
@@ -16,12 +68,15 @@ export default function AgentEditorPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: agent, isLoading, error: loadError } = useAgent(agentId);
+  const { data: tools } = useTools();
   const createAgent = useCreateAgent();
   const updateAgent = useUpdateAgent();
   const deleteAgent = useDeleteAgent();
+  const publishAgent = usePublishAgent();
   const justCreated = Boolean((location.state as { created?: boolean } | null)?.created);
   const [notice, setNotice] = useState<string | null>(justCreated ? "已创建" : null);
   const [error, setError] = useState<string | null>(null);
+  const [versionsOpen, setVersionsOpen] = useState(false);
 
   const saving = createAgent.isPending || updateAgent.isPending;
 
@@ -38,6 +93,18 @@ export default function AgentEditorPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存失败");
+    }
+  }
+
+  async function onPublish() {
+    if (!agentId) return;
+    setNotice(null);
+    setError(null);
+    try {
+      const res = await publishAgent.mutateAsync(agentId);
+      setNotice(`已发布 v${res.version}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "发布失败");
     }
   }
 
@@ -79,11 +146,34 @@ export default function AgentEditorPage() {
               ← 返回
             </Link>
             <h1 className="truncate text-xl font-semibold">{title}</h1>
+            {!isNew && agent && (
+              <>
+                <Badge variant={agent.status === "published" ? "default" : "secondary"}>
+                  {agent.status === "published" ? "已发布" : "草稿"}
+                </Badge>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  v{agent.current_version}
+                </span>
+              </>
+            )}
           </div>
           {!isNew && (
-            <Button variant="destructive" size="sm" onClick={onDelete} disabled={deleteAgent.isPending}>
-              删除
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setVersionsOpen(true)}>
+                版本
+              </Button>
+              <Button size="sm" onClick={onPublish} disabled={publishAgent.isPending}>
+                {publishAgent.isPending ? "发布中…" : "发布"}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={onDelete}
+                disabled={deleteAgent.isPending}
+              >
+                删除
+              </Button>
+            </div>
           )}
         </div>
 
@@ -96,6 +186,30 @@ export default function AgentEditorPage() {
           onSubmit={onSubmit}
           saving={saving}
         />
+
+        {!isNew && agent && (
+          <ToolBindings
+            key={`${agent.id}:${agent.updated_at}`}
+            agent={agent}
+            tools={tools ?? []}
+            onNotice={(message) => {
+              setError(null);
+              setNotice(message);
+            }}
+            onError={(message) => {
+              setNotice(null);
+              setError(message);
+            }}
+          />
+        )}
+
+        {!isNew && agentId && (
+          <VersionsDrawer
+            agentId={agentId}
+            open={versionsOpen}
+            onClose={() => setVersionsOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

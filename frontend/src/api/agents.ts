@@ -19,6 +19,21 @@ export interface AgentItem {
   updated_at: string;
 }
 
+export interface ToolInfo {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  is_system: boolean;
+}
+
+export interface AgentVersion {
+  version: number;
+  snapshot: Record<string, unknown>;
+  created_at: string;
+}
+
 export function useAgents() {
   return useQuery({ queryKey: ["agents"], queryFn: () => apiJson<AgentItem[]>("/api/v1/agents") });
 }
@@ -73,9 +88,60 @@ export function useDeleteAgent() {
 export function useTools() {
   return useQuery({
     queryKey: ["tools"],
-    queryFn: () =>
-      apiJson<
-        { id: string; slug: string; name: string; description: string; category: string; is_system: boolean }[]
-      >("/api/v1/tools"),
+    queryFn: () => apiJson<ToolInfo[]>("/api/v1/tools"),
+  });
+}
+
+export function useSetAgentTools() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, slugs }: { id: string; slugs: string[] }) =>
+      apiJson<{ slugs: string[] }>(`/api/v1/agents/${id}/tools`, {
+        method: "PUT",
+        body: JSON.stringify({ slugs }),
+      }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["agents", id] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function usePublishAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiJson<{ version: number; status: string }>(`/api/v1/agents/${id}/publish`, {
+        method: "POST",
+      }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["agents", id] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["agent-versions", id] });
+    },
+  });
+}
+
+export function useAgentVersions(id: string | undefined) {
+  return useQuery({
+    queryKey: ["agent-versions", id],
+    queryFn: () => apiJson<AgentVersion[]>(`/api/v1/agents/${id}/versions`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useRollbackAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, version }: { id: string; version: number }) =>
+      apiJson<AgentItem>(`/api/v1/agents/${id}/rollback`, {
+        method: "POST",
+        body: JSON.stringify({ version }),
+      }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["agents", id] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["agent-versions", id] });
+    },
   });
 }

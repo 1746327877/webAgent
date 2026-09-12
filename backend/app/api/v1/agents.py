@@ -14,15 +14,17 @@ from app.schemas.agent import (
     AgentVersionOut,
     PublishOut,
     RollbackIn,
+    ToolsIn,
 )
 from app.services import agent_service
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 
-def _to_out(agent) -> AgentOut:
+async def _to_out(db: AsyncSession, agent) -> AgentOut:
     out = AgentOut.model_validate(agent)
     out.variables = agent_service.extract_variables(agent.system_prompt)
+    out.tool_slugs = await agent_service._tool_slugs(db, agent.id)
     return out
 
 
@@ -32,7 +34,7 @@ async def create_agent(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    return _to_out(await agent_service.create_agent(db, user, body))
+    return await _to_out(db, await agent_service.create_agent(db, user, body))
 
 
 @router.get("", response_model=list[AgentOut])
@@ -40,7 +42,7 @@ async def list_agents(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    return [_to_out(a) for a in await agent_service.list_agents(db, user)]
+    return [await _to_out(db, a) for a in await agent_service.list_agents(db, user)]
 
 
 @router.get("/{aid}", response_model=AgentOut)
@@ -49,7 +51,7 @@ async def get_agent(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    return _to_out(await agent_service.get_owned_agent(db, user, aid))
+    return await _to_out(db, await agent_service.get_owned_agent(db, user, aid))
 
 
 @router.patch("/{aid}", response_model=AgentOut)
@@ -61,7 +63,19 @@ async def patch_agent(
 ):
     agent = await agent_service.get_owned_agent(db, user, aid)
     fields = body.model_dump(exclude_unset=True, by_alias=True)
-    return _to_out(await agent_service.update_agent(db, agent, fields))
+    return await _to_out(db, await agent_service.update_agent(db, agent, fields))
+
+
+@router.put("/{aid}/tools")
+async def set_tools(
+    aid: uuid.UUID,
+    body: ToolsIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    agent = await agent_service.get_owned_agent(db, user, aid)
+    bound = await agent_service.set_tools(db, agent, body.slugs)
+    return {"slugs": bound}
 
 
 @router.delete("/{aid}", status_code=204)
@@ -103,4 +117,4 @@ async def rollback_agent(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     agent = await agent_service.get_owned_agent(db, user, aid)
-    return _to_out(await agent_service.rollback_agent(db, agent, body.version))
+    return await _to_out(db, await agent_service.rollback_agent(db, agent, body.version))

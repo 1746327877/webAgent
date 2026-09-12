@@ -86,6 +86,18 @@ async def _tool_slugs(db: AsyncSession, agent_id) -> list[str]:
     return list(rows)
 
 
+async def set_tools(db: AsyncSession, agent: Agent, slugs: list[str]) -> list[str]:
+    await db.execute(delete(AgentTool).where(AgentTool.agent_id == agent.id))
+    bound: list[str] = []
+    for slug in slugs:
+        tool = await db.scalar(select(Tool).where(Tool.slug == slug, Tool.enabled.is_(True)))
+        if tool is not None:
+            db.add(AgentTool(agent_id=agent.id, tool_id=tool.id))
+            bound.append(slug)
+    await db.commit()
+    return bound
+
+
 def _snapshot(agent: Agent, tool_slugs: list[str]) -> dict:
     return {
         "name": agent.name,
@@ -152,6 +164,8 @@ async def rollback_agent(db: AsyncSession, agent: Agent, version: int) -> Agent:
         "examples",
     ):
         setattr(agent, key, snap.get(key))
+    # 设计 04：回滚 = 快照拷回 draft；current_version 保持最新发布号
+    agent.status = "draft"
     await db.execute(delete(AgentTool).where(AgentTool.agent_id == agent.id))
     for slug in snap.get("tool_slugs", []):
         tool = await db.scalar(select(Tool).where(Tool.slug == slug, Tool.enabled.is_(True)))

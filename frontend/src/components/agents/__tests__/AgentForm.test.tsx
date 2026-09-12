@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import AgentForm from "@/components/agents/AgentForm";
 
+vi.mock("@/components/ui/slider", () => ({ Slider: () => null }));
+
 vi.mock("@/api/agents", () => ({
   useModels: () => ({ data: [{ name: "qwen2.5:7b-instruct-q4_K_M", size_mb: 4700 }] }),
   useTools: () => ({ data: [] }),

@@ -60,15 +60,31 @@ async def test_rollback_restores_snapshot_and_tools(client, auth_headers, sessio
         await db.commit()
     await client.post(f"/api/v1/agents/{aid}/publish", headers=auth_headers)
 
-    # 改名后再回滚到 v1
+    # 改名后再回滚到 v1：状态回到 draft，current_version 保持最新发布号 2
     await client.patch(f"/api/v1/agents/{aid}", json={"name": "A3"}, headers=auth_headers)
     r = await client.post(
         f"/api/v1/agents/{aid}/rollback", json={"version": 1}, headers=auth_headers
     )
     assert r.status_code == 200 and r.json()["name"] == "A"
+    assert r.json()["status"] == "draft" and r.json()["current_version"] == 2
     async with session_maker() as db:
         rows = (await db.scalars(select(AgentTool).where(AgentTool.agent_id == uuid.UUID(aid)))).all()
         assert rows == []  # v1 无工具
+
+    # 再回滚到 v2 → 工具绑定恢复为 time_now（重绑正路径）
+    r2 = await client.post(
+        f"/api/v1/agents/{aid}/rollback", json={"version": 2}, headers=auth_headers
+    )
+    assert r2.status_code == 200 and r2.json()["name"] == "A2"
+    async with session_maker() as db:
+        slugs = (
+            await db.scalars(
+                select(Tool.slug)
+                .join(AgentTool, AgentTool.tool_id == Tool.id)
+                .where(AgentTool.agent_id == uuid.UUID(aid))
+            )
+        ).all()
+        assert list(slugs) == ["time_now"]
 
     # 回滚目标版本不存在 → 404
     missing = await client.post(

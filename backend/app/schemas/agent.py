@@ -55,8 +55,13 @@ class AgentOut(BaseModel):
     status: str
     current_version: int
     variables: list[str] = []
+    tool_slugs: list[str] = []
     created_at: datetime
     updated_at: datetime
+
+
+class ToolsIn(BaseModel):
+    slugs: list[str] = []
 
 
 class AgentVersionOut(BaseModel):

@@ -59,6 +59,26 @@ async def test_themes_no_cross_user(client, auth_headers):
     assert (await client.patch(f"/api/v1/agents/{aid}", json={}, headers=other)).status_code == 404
 
 
+async def test_update_tools_and_tool_slugs(client, auth_headers, session_maker):
+    from app.ai.tools import sync_tools
+
+    async with session_maker() as db:
+        await sync_tools(db)
+
+    aid = (await client.post("/api/v1/agents", json=AGENT, headers=auth_headers)).json()["id"]
+    r = await client.put(
+        f"/api/v1/agents/{aid}/tools", json={"slugs": ["time_now"]}, headers=auth_headers
+    )
+    assert r.status_code == 200 and r.json()["slugs"] == ["time_now"]
+    detail = await client.get(f"/api/v1/agents/{aid}", headers=auth_headers)
+    assert detail.json()["tool_slugs"] == ["time_now"]
+    # 替换语义
+    r2 = await client.put(
+        f"/api/v1/agents/{aid}/tools", json={"slugs": []}, headers=auth_headers
+    )
+    assert r2.json()["slugs"] == []
+
+
 async def test_models_endpoint(client, auth_headers):
     class P(FakeProvider):
         async def list_available(self):
