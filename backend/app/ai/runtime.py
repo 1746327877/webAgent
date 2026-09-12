@@ -8,6 +8,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.agent_config import resolve_effective_config
+from app.ai.model_manager import ModelManager
 from app.ai.providers.base import ChatRequest, ModelProvider
 from app.ai.tools.registry import tools_payload
 from app.models.session import Message, Session
@@ -245,6 +246,7 @@ async def run_generation(
     *,
     user_content: str | None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
+    model_manager: ModelManager | None = None,
 ) -> AsyncIterator[str]:
     """user_content=None 时仅生成助手消息（重新生成场景）。"""
     user = await db.get(User, session.user_id)
@@ -355,6 +357,22 @@ async def run_generation(
                         **{k: v for k, v in block.items() if k != "type"},
                     },
                 )
+
+        if model_manager is not None and model_manager.current != cfg.model:
+            yield sse(
+                "model_switching",
+                {"from": model_manager.current, "to": cfg.model, "stage": "start"},
+            )
+            switch_info = await model_manager.acquire(cfg.model)
+            yield sse(
+                "model_switching",
+                {
+                    "from": switch_info["from"],
+                    "to": switch_info["to"],
+                    "stage": "done",
+                    "duration_ms": switch_info["duration_ms"],
+                },
+            )
 
         cancelled = False
         for _ in range(MAX_TOOL_ROUNDS):

@@ -6,7 +6,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.ai.deps import get_provider
+from app.ai.deps import get_model_manager, get_provider
+from app.ai.model_manager import ModelManager
 from app.ai.providers.base import ModelProvider
 from app.ai.runtime import run_generation
 from app.api.v1.deps import get_current_user
@@ -99,10 +100,18 @@ async def post_message(
     db: Annotated[AsyncSession, Depends(get_db)],
     provider: Annotated[ModelProvider, Depends(get_provider)],
     factory: Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)],
+    manager: Annotated[ModelManager | None, Depends(get_model_manager)],
 ):
     session = await session_service.get_owned_session(db, user, sid)
     return StreamingResponse(
-        run_generation(db, session, provider, user_content=body.content, session_factory=factory),
+        run_generation(
+            db,
+            session,
+            provider,
+            user_content=body.content,
+            session_factory=factory,
+            model_manager=manager,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -133,12 +142,20 @@ async def regenerate(
     db: Annotated[AsyncSession, Depends(get_db)],
     provider: Annotated[ModelProvider, Depends(get_provider)],
     factory: Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)],
+    manager: Annotated[ModelManager | None, Depends(get_model_manager)],
 ):
     session, message = target
     keep_target = message.role == "user"
     await message_service.truncate_session(db, session, message.id, keep_target=keep_target)
     return StreamingResponse(
-        run_generation(db, session, provider, user_content=None, session_factory=factory),
+        run_generation(
+            db,
+            session,
+            provider,
+            user_content=None,
+            session_factory=factory,
+            model_manager=manager,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
