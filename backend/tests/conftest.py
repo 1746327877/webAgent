@@ -41,7 +41,11 @@ async def session_maker(engine):
 
 @pytest_asyncio.fixture(autouse=True)
 async def clean_tables(engine):
+    from app.observability.http_stats import collector
+
+    collector.clear()
     yield
+    collector.clear()
     async with engine.begin() as c:
         await c.execute(
             text(

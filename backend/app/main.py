@@ -1,4 +1,5 @@
 import asyncio
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,7 +11,14 @@ from app.ai.runtime import recover_stale_streaming
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.db import SessionLocal
+from app.observability.http_stats import collector
 from app.services.attachment_service import cleanup_orphan_attachments
+
+
+async def _http_stats_flush_loop() -> None:
+    while True:
+        await asyncio.sleep(60)
+        await collector.flush()
 
 
 async def _attachment_gc_loop() -> None:
@@ -34,16 +42,18 @@ async def lifespan(_: FastAPI):
     async with SessionLocal() as db:
         await sync_tools(db)
     gc_task = asyncio.create_task(_attachment_gc_loop())
+    flush_task = asyncio.create_task(_http_stats_flush_loop())
     try:
         yield
     finally:
-        for task in (watch_task, gc_task):
+        for task in (watch_task, gc_task, flush_task):
             task.cancel()
-        for task in (watch_task, gc_task):
+        for task in (watch_task, gc_task, flush_task):
             try:
                 await task
             except asyncio.CancelledError:
                 pass
+        await collector.flush()  # 退出前最后落一次盘（best-effort）
         await app.state.provider.aclose()
 
 
@@ -56,6 +66,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def http_metrics_middleware(request, call_next):
+    t0 = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        collector.record(500, (time.perf_counter() - t0) * 1000)
+        raise
+    collector.record(response.status_code, (time.perf_counter() - t0) * 1000)
+    return response
+
 
 app.include_router(api_router)
 

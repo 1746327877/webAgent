@@ -5,6 +5,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import func, select, update
@@ -44,6 +45,8 @@ async def _execute_tool(
     session_id: uuid.UUID | None = None,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
     embedder: Embedder | None = None,
+    span_buffer=None,
+    user_id: uuid.UUID | None = None,
 ) -> tuple[str, str]:
     from app.ai.tools.registry import get_tool
 
@@ -74,6 +77,8 @@ async def _execute_tool(
                     top_k=top_k,
                     session_maker=session_maker,
                     embedder=embedder,
+                    span_buffer=span_buffer,
+                    user_id=user_id,
                 )
                 if query
                 else []
@@ -121,6 +126,8 @@ async def _retrieve_for_agent(
     top_k: int | None = None,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
     embedder: Embedder | None = None,
+    span_buffer=None,
+    user_id: uuid.UUID | None = None,
 ) -> list:
     """按智能体绑定的 KB 检索；命中返回 RetrievedChunk 列表；写 retrieval span。"""
     from app.ai.rag.retrieval import hybrid_search
@@ -138,6 +145,7 @@ async def _retrieve_for_agent(
         session_maker = SessionLocal
 
     started = time.monotonic()
+    started_at = datetime.now(UTC)
     try:
         chunks = await hybrid_search(
             session_maker, kb_ids, query, limit, embedder or _default_embedder
@@ -145,23 +153,37 @@ async def _retrieve_for_agent(
         status, err = "ok", None
     except Exception as exc:  # noqa: BLE001 —— 检索失败降级为空结果，生成不中断
         chunks, status, err = [], "error", str(exc)[:300]
-    await record_span(
-        db,
-        trace_id=assistant_id if assistant_id is not None else agent_id,
-        type="retrieval",
-        name="kb检索",
-        session_id=session_id,
-        agent_id=agent_id,
-        input={"query": query, "kb_ids": [str(k) for k in kb_ids]},
-        output={
-            "chunks": [
-                {"id": c.id, "source": c.source, "score": c.rrf_score} for c in chunks
-            ]
-        },
-        status=status,
-        error=err,
-        started=started,
-    )
+    output = {"chunks": [{"id": c.id, "source": c.source, "score": c.rrf_score} for c in chunks]}
+    if span_buffer is not None:
+        span_buffer.add(
+            type="retrieval",
+            name="kb检索",
+            session_id=session_id,
+            agent_id=agent_id,
+            user_id=user_id,
+            input={"query": query, "kb_ids": [str(k) for k in kb_ids]},
+            output=output,
+            status=status,
+            error=err,
+            started_at=started_at,
+            ended_at=datetime.now(UTC),
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
+    else:
+        await record_span(
+            db,
+            trace_id=assistant_id if assistant_id is not None else agent_id,
+            type="retrieval",
+            name="kb检索",
+            session_id=session_id,
+            agent_id=agent_id,
+            user_id=user_id,
+            input={"query": query, "kb_ids": [str(k) for k in kb_ids]},
+            output=output,
+            status=status,
+            error=err,
+            started=started,
+        )
     return chunks
 
 
@@ -215,6 +237,7 @@ async def _finalize(
     status: str,
     usage: dict | None,
     error_text: str | None,
+    spans=None,
 ) -> None:
     CANCEL_FLAGS.pop(assistant_id, None)
     await db.execute(
@@ -226,6 +249,8 @@ async def _finalize(
         update(Session).where(Session.id == session_id).values(last_message_at=func.now())
     )
     await db.commit()
+    if spans is not None:
+        await spans.flush(db)
 
 
 async def recover_stale_streaming(
@@ -331,6 +356,16 @@ async def run_generation(
     assistant_id = assistant.id
     exclude_ids.add(assistant_id)
 
+    from app.observability.spans import SpanBuffer
+
+    spans = SpanBuffer(
+        trace_id=assistant_id,
+        session_id=session.id,
+        message_id=assistant_id,
+        agent_id=cfg.agent_id,
+        user_id=session.user_id,
+    )
+
     blocks: list[dict] = []
     usage: dict | None = None
     status = "done"
@@ -386,6 +421,8 @@ async def run_generation(
                     session_id=session.id,
                     session_maker=session_factory,
                     embedder=embedder,
+                    span_buffer=spans,
+                    user_id=session.user_id,
                 )
                 if query_text
                 else []
@@ -427,7 +464,22 @@ async def run_generation(
                 "model_switching",
                 {"from": model_manager.current, "to": cfg.model, "stage": "start"},
             )
+            switch_started = datetime.now(UTC)
             switch_info = await model_manager.acquire(cfg.model)
+            spans.add(
+                type="model_switch",
+                name=cfg.model,
+                model=cfg.model,
+                status="ok",
+                input={"from": switch_info["from"], "to": switch_info["to"]},
+                output={
+                    "duration_ms": switch_info["duration_ms"],
+                    "switched": switch_info["switched"],
+                },
+                started_at=switch_started,
+                ended_at=datetime.now(UTC),
+                duration_ms=switch_info["duration_ms"],
+            )
             yield sse(
                 "model_switching",
                 {
@@ -450,56 +502,88 @@ async def run_generation(
                 num_ctx=cfg.num_ctx,
             )
             tool_calls: list[dict] = []
-            async for ev in provider.chat_stream(req):
-                now = time.monotonic()
-                if CANCEL_FLAGS.pop(assistant_id, False):
-                    status = "stopped"
-                    cancelled = True
-                    break
-                if ev.type == "token":
-                    if blocks and blocks[-1]["type"] == "text":
-                        blocks[-1]["content"] += ev.payload["delta"]
-                    else:
-                        if (
-                            thinking_started is not None
-                            and blocks
-                            and blocks[-1]["type"] == "thinking"
-                        ):
-                            blocks[-1]["duration_ms"] = round((now - thinking_started) * 1000)
-                            thinking_started = None
-                        blocks.append({"type": "text", "content": ev.payload["delta"]})
-                    if first_token_ms is None:
-                        first_token_ms = round((now - t0) * 1000, 1)
-                    yield sse(
-                        "token", {"message_id": str(assistant_id), "delta": ev.payload["delta"]}
-                    )
-                elif ev.type == "thinking":
-                    if blocks and blocks[-1]["type"] == "thinking":
-                        blocks[-1]["content"] += ev.payload["delta"]
-                    else:
-                        blocks.append(
-                            {
-                                "type": "thinking",
-                                "content": ev.payload["delta"],
-                                "duration_ms": None,
-                            }
+            round_started_mono = time.monotonic()
+            round_started_at = datetime.now(UTC)
+            round_first_token_ms: float | None = None
+            round_usage: dict | None = None
+            round_text: list[str] = []
+            round_status, round_error = "ok", None
+            round_span_id = None
+            try:
+                async for ev in provider.chat_stream(req):
+                    now = time.monotonic()
+                    if CANCEL_FLAGS.pop(assistant_id, False):
+                        status = "stopped"
+                        round_status = "stopped"
+                        cancelled = True
+                        break
+                    if ev.type == "token":
+                        round_text.append(ev.payload["delta"])
+                        if round_first_token_ms is None:
+                            round_first_token_ms = round((now - t0) * 1000, 1)
+                        if blocks and blocks[-1]["type"] == "text":
+                            blocks[-1]["content"] += ev.payload["delta"]
+                        else:
+                            if (
+                                thinking_started is not None
+                                and blocks
+                                and blocks[-1]["type"] == "thinking"
+                            ):
+                                blocks[-1]["duration_ms"] = round((now - thinking_started) * 1000)
+                                thinking_started = None
+                            blocks.append({"type": "text", "content": ev.payload["delta"]})
+                        if first_token_ms is None:
+                            first_token_ms = round((now - t0) * 1000, 1)
+                        yield sse(
+                            "token",
+                            {"message_id": str(assistant_id), "delta": ev.payload["delta"]},
                         )
-                        thinking_started = now
-                    yield sse(
-                        "thinking", {"message_id": str(assistant_id), "delta": ev.payload["delta"]}
-                    )
-                elif ev.type == "tool_call":
-                    tool_calls.append(ev.payload)
-                elif ev.type == "usage":
-                    usage = _merge_usage(usage, ev.payload)
+                    elif ev.type == "thinking":
+                        if blocks and blocks[-1]["type"] == "thinking":
+                            blocks[-1]["content"] += ev.payload["delta"]
+                        else:
+                            blocks.append(
+                                {
+                                    "type": "thinking",
+                                    "content": ev.payload["delta"],
+                                    "duration_ms": None,
+                                }
+                            )
+                            thinking_started = now
+                        yield sse(
+                            "thinking",
+                            {"message_id": str(assistant_id), "delta": ev.payload["delta"]},
+                        )
+                    elif ev.type == "tool_call":
+                        tool_calls.append(ev.payload)
+                    elif ev.type == "usage":
+                        round_usage = ev.payload
+                        usage = _merge_usage(usage, ev.payload)
 
-                if now - last_flush >= FLUSH_INTERVAL_S:
-                    await db.execute(
-                        update(Message).where(Message.id == assistant_id).values(blocks=blocks)
-                    )
-                    await db.commit()
-                    last_flush = now
-
+                    if now - last_flush >= FLUSH_INTERVAL_S:
+                        await db.execute(
+                            update(Message).where(Message.id == assistant_id).values(blocks=blocks)
+                        )
+                        await db.commit()
+                        last_flush = now
+            except Exception as exc:  # 记录 llm span 后交给外层统一转 SSE error
+                round_status, round_error = "error", str(exc)[:300]
+                raise
+            finally:
+                round_span_id = spans.add(
+                    type="llm",
+                    name=cfg.model,
+                    model=cfg.model,
+                    status=round_status,
+                    error=round_error,
+                    prompt_tokens=(round_usage or {}).get("prompt_tokens"),
+                    completion_tokens=(round_usage or {}).get("completion_tokens"),
+                    input={"messages": messages},
+                    output={"text": "".join(round_text), "first_token_ms": round_first_token_ms},
+                    started_at=round_started_at,
+                    ended_at=datetime.now(UTC),
+                    duration_ms=round((time.monotonic() - round_started_mono) * 1000),
+                )
             if cancelled or not tool_calls:
                 break
 
@@ -543,6 +627,7 @@ async def run_generation(
                     cancelled_during_tools = True
                     break
                 started = time.monotonic()
+                tool_started_at = datetime.now(UTC)
                 result, tool_status = await _execute_tool(
                     call["name"],
                     call.get("args") or "",
@@ -552,8 +637,21 @@ async def run_generation(
                     session_id=session.id,
                     session_maker=session_factory,
                     embedder=embedder,
+                    span_buffer=spans,
+                    user_id=session.user_id,
                 )
                 elapsed = round((time.monotonic() - started) * 1000)
+                spans.add(
+                    type="tool",
+                    name=call["name"],
+                    status=tool_status,
+                    parent_span_id=round_span_id,
+                    input={"args": call.get("args")},
+                    output={"result": result[:TOOL_RESULT_MAX]},
+                    started_at=tool_started_at,
+                    ended_at=datetime.now(UTC),
+                    duration_ms=elapsed,
+                )
                 preview = result[:TOOL_PREVIEW_LEN]
                 blocks.append(
                     {
@@ -581,10 +679,10 @@ async def run_generation(
             if cancelled_during_tools:
                 break
     except asyncio.CancelledError:
-        await _finalize(db, assistant_id, session.id, blocks, "stopped", usage, None)
+        await _finalize(db, assistant_id, session.id, blocks, "stopped", usage, None, spans=spans)
         raise
     except GeneratorExit:
-        await _finalize(db, assistant_id, session.id, blocks, "stopped", usage, None)
+        await _finalize(db, assistant_id, session.id, blocks, "stopped", usage, None, spans=spans)
         raise
     except Exception as exc:  # noqa: BLE001 —— 边界处转 SSE error
         status = "error"
@@ -594,7 +692,7 @@ async def run_generation(
         if thinking_started is not None and blocks and blocks[-1]["type"] == "thinking":
             blocks[-1]["duration_ms"] = round((time.monotonic() - thinking_started) * 1000)
 
-    await _finalize(db, assistant_id, session.id, blocks, status, usage, error_text)
+    await _finalize(db, assistant_id, session.id, blocks, status, usage, error_text, spans=spans)
     if (
         session_factory is not None
         and user_content is not None
