@@ -269,10 +269,48 @@ export default function ChatView() {
   }
 
   if (!sessionId) {
+    // 首页居中落地态：无会话时展示欢迎信息 + 大输入框，发送即创建会话
+    const landingAgent = agent ?? agents[0];
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-        {scopedError && <p className="text-sm text-red-500">出错：{scopedError}</p>}
-        点击「新建任务」开始对话
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 px-4 py-10">
+          <div className="text-center">
+            <div className="text-5xl">{landingAgent?.emoji ?? "💬"}</div>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight">
+              {landingAgent ? landingAgent.name : "开始新的对话"}
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {landingAgent?.welcome_msg || "输入你的问题，或 @ 提及智能体协作"}
+            </p>
+          </div>
+          <div className="w-full">
+            <Composer
+              onSend={send}
+              onStop={stop}
+              generating={ownsActive}
+              agents={agents}
+              attachments={attachments}
+              onAttach={attach}
+              onRemoveAttachment={removeAttachment}
+              sessionKey={sessionId ?? "new"}
+              variant="landing"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            <kbd className="rounded border px-1">@</kbd> 提及智能体 ·{" "}
+            <kbd className="rounded border px-1">/</kbd> 命令 · Enter 发送
+          </p>
+          {landingAgent && landingAgent.examples.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-2">
+              {landingAgent.examples.map((example) => (
+                <Button key={example} variant="outline" size="sm" onClick={() => send(example)}>
+                  {example}
+                </Button>
+              ))}
+            </div>
+          )}
+          {scopedError && <p className="text-sm text-red-500">出错：{scopedError}</p>}
+        </div>
       </div>
     );
   }

@@ -34,7 +34,7 @@ const mockState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/sessions", () => ({
-  useCreateSession: () => ({ mutateAsync: vi.fn() }),
+  useCreateSession: () => ({ mutateAsync: vi.fn(async () => ({ id: "new-1" })) }),
   useMessages: () => ({ data: mockState.messages }),
   useSession: () => ({ data: mockState.session }),
 }));
@@ -112,6 +112,21 @@ function renderAt(sessionId: string, withSwitcher = false) {
               )
             }
           />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/** 无会话落地态：路由 "/"，发送后跳转新建会话 */
+function renderAtRoot() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<ChatView />} />
+          <Route path="/sessions/:sessionId" element={<ChatView />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -219,6 +234,22 @@ test("空会话展示智能体欢迎语与示例", async () => {
   renderAt("s1");
   expect(await screen.findByText("贴代码给我")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "帮我 review 这段" })).toBeInTheDocument();
+});
+
+test("无会话展示居中落地态：欢迎语、大输入框与示例、@// 提示", async () => {
+  mockState.agents = [{ id: "a1", name: "代码专家", emoji: "💻" }];
+  renderAtRoot();
+  expect(await screen.findByText("贴代码给我")).toBeInTheDocument();
+  expect(screen.getByPlaceholderText("输入问题，Enter 发送")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "帮我 review 这段" })).toBeInTheDocument();
+  expect(screen.getByText(/命令/)).toBeInTheDocument();
+});
+
+test("落地态输入发送创建新会话并走同一发送路径", async () => {
+  renderAtRoot();
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "你好{Enter}");
+  await waitFor(() => expect(mockState.lastPath).toBe("/api/v1/sessions/new-1/messages"));
+  expect(mockState.lastBody).toEqual({ content: "你好", mentions: [], attachment_ids: [] });
 });
 
 test("citation/tool 事件流式出现，点击角标打开依据抽屉", async () => {

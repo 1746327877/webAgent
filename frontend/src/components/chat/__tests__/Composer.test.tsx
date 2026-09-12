@@ -168,3 +168,14 @@ test("sessionKey 不变时保留草稿", async () => {
   rerender(<Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} sessionKey="s1" />);
   expect(input().value).toBe("半句草稿");
 });
+
+test("输入框为多行 textarea，会话内与落地态高度递增", () => {
+  const { rerender } = render(<Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} />);
+  const input = screen.getByPlaceholderText("输入问题，Enter 发送");
+  expect(input.tagName).toBe("TEXTAREA");
+  expect(input).toHaveClass("min-h-24");
+  rerender(
+    <Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} variant="landing" />,
+  );
+  expect(screen.getByPlaceholderText("输入问题，Enter 发送")).toHaveClass("min-h-40");
+});

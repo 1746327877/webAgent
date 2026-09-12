@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "cn";
 
 interface MentionAgent {
@@ -29,6 +29,8 @@ interface Props {
   onAttach?: (file: File) => void;
   onRemoveAttachment?: (id: string) => void;
   sessionKey?: string;
+  /** landing：首页居中大输入框；default：会话内输入框 */
+  variant?: "default" | "landing";
 }
 
 const MENTION_TAIL = /@([^\s@]*)$/;
@@ -48,6 +50,7 @@ export default function Composer({
   onAttach,
   onRemoveAttachment,
   sessionKey = "default",
+  variant = "default",
 }: Props) {
   const [input, setInput] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -107,7 +110,7 @@ export default function Composer({
   }
 
   return (
-    <div className="flex flex-col gap-2 border-t p-3">
+    <div className={cn("flex flex-col gap-2", variant === "default" && "border-t p-3")}>
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {attachments.map((attachment) => {
@@ -152,7 +155,7 @@ export default function Composer({
       {attachCap && attachHint && (
         <p className="text-xs text-muted-foreground">最多上传 {MAX_ATTACHMENTS} 个附件</p>
       )}
-      <div className="flex gap-2">
+      <div className="relative flex flex-col gap-2 rounded-xl border bg-background p-2 shadow-sm focus-within:border-ring">
         <input
           ref={fileRef}
           type="file"
@@ -172,89 +175,100 @@ export default function Composer({
             onAttach?.(file);
           }}
         />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            if (attachCap) {
-              setAttachHint(true);
-              return;
-            }
-            fileRef.current?.click();
-          }}
-        >
-          上传附件
-        </Button>
-        <div className="relative flex-1">
-          {mentionQuery !== null && options.length > 0 && (
-            <div className="absolute bottom-full left-0 z-10 mb-2 w-56">
-              {atCap && (
-                <p className="mb-1 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
-                  最多同时 @ 2 个智能体
-                </p>
-              )}
-              <Card size="sm" role="listbox" aria-label="提及智能体" className="gap-0.5 p-1">
-                {options.map((a, i) => (
-                  <Button
-                    key={a.id}
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    role="option"
-                    aria-selected={i === activeIndex}
-                    className={cn(
-                      "w-full justify-start font-normal",
-                      i === activeIndex && "bg-muted",
-                    )}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => select(a)}
-                  >
-                    <span>{a.emoji}</span>
-                    <span>{a.name}</span>
-                  </Button>
-                ))}
-              </Card>
-            </div>
-          )}
-          <Input
-            value={input}
-            onChange={(e) => onChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (mentionQuery !== null && options.length > 0) {
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setActiveIndex((i) => (i + 1) % options.length);
-                  return;
-                }
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setActiveIndex((i) => (i - 1 + options.length) % options.length);
-                  return;
-                }
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  select(options[Math.min(activeIndex, options.length - 1)]);
-                  return;
-                }
-              }
-              if (e.key === "Escape") {
-                setMentionQuery(null);
+        {mentionQuery !== null && options.length > 0 && (
+          <div className="absolute bottom-full left-0 z-10 mb-2 w-56">
+            {atCap && (
+              <p className="mb-1 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                最多同时 @ 2 个智能体
+              </p>
+            )}
+            <Card size="sm" role="listbox" aria-label="提及智能体" className="gap-0.5 p-1">
+              {options.map((a, i) => (
+                <Button
+                  key={a.id}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  role="option"
+                  aria-selected={i === activeIndex}
+                  className={cn(
+                    "w-full justify-start font-normal",
+                    i === activeIndex && "bg-muted",
+                  )}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => select(a)}
+                >
+                  <span>{a.emoji}</span>
+                  <span>{a.name}</span>
+                </Button>
+              ))}
+            </Card>
+          </div>
+        )}
+        <Textarea
+          value={input}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (mentionQuery !== null && options.length > 0) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActiveIndex((i) => (i + 1) % options.length);
                 return;
               }
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "ArrowUp") {
                 e.preventDefault();
-                submit();
+                setActiveIndex((i) => (i - 1 + options.length) % options.length);
+                return;
               }
+              if (e.key === "Enter") {
+                e.preventDefault();
+                select(options[Math.min(activeIndex, options.length - 1)]);
+                return;
+              }
+            }
+            if (e.key === "Escape") {
+              setMentionQuery(null);
+              return;
+            }
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder="输入问题，Enter 发送"
+          className={cn(
+            "min-h-24 resize-none border-0 bg-transparent px-3 py-3 text-base shadow-none focus-visible:ring-0",
+            variant === "landing" && "min-h-40 text-base",
+          )}
+        />
+        <div className="flex items-center gap-2 px-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (attachCap) {
+                setAttachHint(true);
+                return;
+              }
+              fileRef.current?.click();
             }}
-            placeholder="输入问题，Enter 发送"
-          />
+          >
+            上传附件
+          </Button>
+          <span className="hidden text-xs text-muted-foreground sm:inline">
+            @ 提及智能体 · Shift+Enter 换行
+          </span>
+          <div className="ml-auto flex gap-2">
+            {generating ? (
+              <Button variant="secondary" onClick={onStop}>
+                停止
+              </Button>
+            ) : (
+              <Button onClick={submit}>发送</Button>
+            )}
+          </div>
         </div>
-        {generating ? (
-          <Button variant="secondary" onClick={onStop}>停止</Button>
-        ) : (
-          <Button onClick={submit}>发送</Button>
-        )}
       </div>
     </div>
   );
