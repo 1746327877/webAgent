@@ -15,8 +15,70 @@ from app.ai.providers.base import (
 )
 
 
-def _strip_think_tags(content: str) -> str:
-    return content.replace("<think>", "").replace("</think>", "").strip()
+class _ThinkTagParser:
+    """跨 chunk 解析内联 <think>…</think>：旧版 Ollama 把标签混在 content 中。"""
+
+    OPEN = "<think>"
+    CLOSE = "</think>"
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._in_think = False
+
+    @classmethod
+    def _partial_len(cls, text: str) -> int:
+        """text 尾部可能是某个标签前缀的最长长度（需缓存到下一 chunk）。"""
+        limit = min(len(text), max(len(cls.OPEN), len(cls.CLOSE)) - 1)
+        for size in range(limit, 0, -1):
+            tail = text[-size:]
+            if cls.OPEN.startswith(tail) or cls.CLOSE.startswith(tail):
+                return size
+        return 0
+
+    def feed(self, content: str) -> list[tuple[str, str]]:
+        self._buf += content
+        events: list[tuple[str, str]] = []
+        while self._buf:
+            if self._in_think:
+                end = self._buf.find(self.CLOSE)
+                if end == -1:
+                    keep = self._partial_len(self._buf)
+                    head = self._buf[:-keep] if keep else self._buf
+                    if head:
+                        events.append(("thinking", head))
+                    self._buf = self._buf[-keep:] if keep else ""
+                    return events
+                if end > 0:
+                    events.append(("thinking", self._buf[:end]))
+                self._buf = self._buf[end + len(self.CLOSE):]
+                self._in_think = False
+                continue
+            start = self._buf.find(self.OPEN)
+            close = self._buf.find(self.CLOSE)
+            if close != -1 and (start == -1 or close < start):
+                if close > 0:  # 多余闭合标签：直接丢弃，不污染正文
+                    events.append(("token", self._buf[:close]))
+                self._buf = self._buf[close + len(self.CLOSE):]
+                continue
+            if start == -1:
+                keep = self._partial_len(self._buf)
+                head = self._buf[:-keep] if keep else self._buf
+                if head:
+                    events.append(("token", head))
+                self._buf = self._buf[-keep:] if keep else ""
+                return events
+            if start > 0:
+                events.append(("token", self._buf[:start]))
+            self._buf = self._buf[start + len(self.OPEN):]
+            self._in_think = True
+        return events
+
+    def flush(self) -> list[tuple[str, str]]:
+        if not self._buf:
+            return []
+        kind = "thinking" if self._in_think else "token"
+        delta, self._buf = self._buf, ""
+        return [(kind, delta)]
 
 
 class OllamaProvider(ModelProvider):
@@ -43,6 +105,7 @@ class OllamaProvider(ModelProvider):
         if req.tools:
             payload["tools"] = req.tools
 
+        parser = _ThinkTagParser()
         async with self._client.stream("POST", "/api/chat", json=payload, timeout=None) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
@@ -56,11 +119,9 @@ class OllamaProvider(ModelProvider):
                     yield ChatEvent("thinking", {"delta": thinking})
                 content = msg.get("content") or ""
                 if content:
-                    if "<think>" in content:  # 旧版 Ollama 内联标签兜底
-                        if stripped := _strip_think_tags(content):
-                            yield ChatEvent("thinking", {"delta": stripped})
-                    else:
-                        yield ChatEvent("token", {"delta": content})
+                    for kind, delta in parser.feed(content):
+                        if delta:
+                            yield ChatEvent(kind, {"delta": delta})
                 for call in msg.get("tool_calls") or []:
                     fn = call.get("function", {})
                     yield ChatEvent(
@@ -69,6 +130,9 @@ class OllamaProvider(ModelProvider):
                          "args": fn.get("arguments")},
                     )
                 if chunk.get("done"):
+                    for kind, delta in parser.flush():
+                        if delta:
+                            yield ChatEvent(kind, {"delta": delta})
                     yield ChatEvent(
                         "usage",
                         {
