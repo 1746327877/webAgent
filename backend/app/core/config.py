@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     vision_model: str = "qwen2.5vl:7b"
     model_keep_alive: str = "15m"
     vram_poll_seconds: int = 10
+    attachment_orphan_hours: int = 24
+    attachment_gc_interval_seconds: int = 3600
 
 
 settings = Settings()

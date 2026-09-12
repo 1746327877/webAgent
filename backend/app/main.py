@@ -10,6 +10,16 @@ from app.ai.runtime import recover_stale_streaming
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.db import SessionLocal
+from app.services.attachment_service import cleanup_orphan_attachments
+
+
+async def _attachment_gc_loop() -> None:
+    while True:
+        try:
+            await cleanup_orphan_attachments()
+        except Exception:  # noqa: BLE001, S110 —— 清理失败下一轮重试，不得拖垮进程
+            pass
+        await asyncio.sleep(settings.attachment_gc_interval_seconds)
 
 
 @asynccontextmanager
@@ -23,14 +33,17 @@ async def lifespan(_: FastAPI):
 
     async with SessionLocal() as db:
         await sync_tools(db)
+    gc_task = asyncio.create_task(_attachment_gc_loop())
     try:
         yield
     finally:
-        watch_task.cancel()
-        try:
-            await watch_task
-        except asyncio.CancelledError:
-            pass
+        for task in (watch_task, gc_task):
+            task.cancel()
+        for task in (watch_task, gc_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await app.state.provider.aclose()
 
 
