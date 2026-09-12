@@ -320,6 +320,7 @@ async def run_generation(
     model_manager: ModelManager | None = None,
     agent_override: uuid.UUID | None = None,
     relay_instruction: str | None = None,
+    model_override: str | None = None,
     image_paths: list[str] | None = None,
     document_files: list[tuple[str, str, str]] | None = None,
     attachment_ids: list[uuid.UUID] | None = None,
@@ -327,6 +328,7 @@ async def run_generation(
     """user_content=None 时仅生成助手消息（重新生成/接力场景）。
 
     agent_override 指定被 @ 的智能体（接力回合），relay_instruction 注入接力指令。
+    model_override 覆盖主回合模型（非空时生效）；有图时视觉模型优先于该覆盖。
     image_paths 非空时该轮切到视觉模型，并把图片 base64 附到最后一条 user 消息；
     document_files 为 (落盘路径, 扩展名, 原始文件名) 列表，抽取文本后以 system 上下文注入；
     attachment_ids 在用户消息落库后回填 message_id。
@@ -359,6 +361,9 @@ async def run_generation(
             else None
         )
         cfg = replace(cfg, model=vision_model or settings.vision_model)
+    elif model_override:
+        # 无图时用户显式选择的模型覆盖智能体默认；未知模型由 ModelManager 加载失败路径报错
+        cfg = replace(cfg, model=model_override)
     exclude_ids: set[uuid.UUID] = set()
     if user_content is not None:
         user_msg = Message(

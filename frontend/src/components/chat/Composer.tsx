@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import ModelSelector, { type ModelOption } from "@/components/chat/ModelSelector";
 import { cn } from "cn";
 
 interface MentionAgent {
@@ -31,6 +32,13 @@ interface Props {
   sessionKey?: string;
   /** landing：首页居中大输入框；default：会话内输入框 */
   variant?: "default" | "landing";
+  /** 可用模型（来自 GET /api/v1/models） */
+  models?: ModelOption[];
+  /** 当前显式选择的模型；null 表示智能体默认 */
+  modelOverride?: string | null;
+  onModelChange?: (model: string | null) => void;
+  /** 未选择模型时展示的智能体默认模型名 */
+  defaultModelLabel?: string;
 }
 
 const MENTION_TAIL = /@([^\s@]*)$/;
@@ -51,6 +59,10 @@ export default function Composer({
   onRemoveAttachment,
   sessionKey = "default",
   variant = "default",
+  models = [],
+  modelOverride = null,
+  onModelChange,
+  defaultModelLabel = "默认模型",
 }: Props) {
   const [input, setInput] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -242,6 +254,12 @@ export default function Composer({
           )}
         />
         <div className="flex items-center gap-2 px-1">
+          <ModelSelector
+            models={models}
+            value={modelOverride}
+            defaultLabel={defaultModelLabel}
+            onChange={(model) => onModelChange?.(model)}
+          />
           <Button
             type="button"
             variant="outline"

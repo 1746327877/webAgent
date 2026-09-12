@@ -179,3 +179,42 @@ test("输入框为多行 textarea，会话内与落地态高度递增", () => {
   );
   expect(screen.getByPlaceholderText("输入问题，Enter 发送")).toHaveClass("min-h-40");
 });
+
+const MODEL_OPTIONS = [
+  { name: "qwen2.5:7b", size_mb: 4096 },
+  { name: "llama3:8b", size_mb: null },
+];
+
+test("模型下拉选择后回调，未选时展示智能体默认并高亮当前项", async () => {
+  const onModelChange = vi.fn();
+  const { rerender } = render(
+    <Composer
+      onSend={vi.fn()}
+      onStop={vi.fn()}
+      generating={false}
+      models={MODEL_OPTIONS}
+      modelOverride={null}
+      onModelChange={onModelChange}
+      defaultModelLabel="qwen2.5:7b"
+    />,
+  );
+  const trigger = () => screen.getByRole("button", { name: "选择模型" });
+  expect(trigger()).toHaveTextContent("qwen2.5:7b");
+
+  await userEvent.click(trigger());
+  await userEvent.click(await screen.findByText("llama3:8b"));
+  expect(onModelChange).toHaveBeenCalledWith("llama3:8b");
+
+  rerender(
+    <Composer
+      onSend={vi.fn()}
+      onStop={vi.fn()}
+      generating={false}
+      models={MODEL_OPTIONS}
+      modelOverride="llama3:8b"
+      onModelChange={onModelChange}
+      defaultModelLabel="qwen2.5:7b"
+    />,
+  );
+  expect(trigger()).toHaveTextContent("llama3:8b");
+});

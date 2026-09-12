@@ -8,7 +8,7 @@ import {
   type Block,
   type MessageItemData,
 } from "@/api/sessions";
-import { useAgent, useAgents } from "@/api/agents";
+import { useAgent, useAgents, useModels } from "@/api/agents";
 import { apiFetch } from "@/lib/api";
 import { streamRequest } from "@/lib/stream";
 import { createTokenBuffer } from "@/lib/tokenBuffer";
@@ -19,6 +19,7 @@ import MessageActions from "@/components/chat/MessageActions";
 import MessageList from "@/components/chat/MessageList";
 import { Button } from "@/components/ui/button";
 import { useChatStreamStore, type ToolEvent } from "@/stores/chatStream";
+import { useComposerStore } from "@/stores/composer";
 
 /** tool_result 事件不带工具名，从同一批 tool_call 事件里补上，流式卡片才能显示名称 */
 function toolBlock(event: ToolEvent, all: ToolEvent[]): Block {
@@ -38,6 +39,14 @@ export default function ChatView() {
   const { data: session } = useSession(sessionId);
   const { data: agent } = useAgent(session?.agent_id ?? undefined);
   const { data: agents = [] } = useAgents();
+  const { data: models = [] } = useModels();
+  const modelOverride = useComposerStore((s) => s.modelOverride);
+  const setModelOverride = useComposerStore((s) => s.setModelOverride);
+  const defaultModel = (a?: { model_config?: Record<string, unknown> }) => {
+    const m = a?.model_config?.model;
+    return typeof m === "string" && m ? m : null;
+  };
+  const defaultModelLabel = defaultModel(agent) ?? defaultModel(agents[0]) ?? "默认模型";
   const agentById = new Map(agents.map((a) => [a.id, a]));
   const {
     active,
@@ -222,7 +231,13 @@ export default function ChatView() {
     }
     await runStream(
       `/api/v1/sessions/${target}/messages`,
-      { content: text, mentions, attachment_ids: attachmentIds },
+      {
+        content: text,
+        mentions,
+        attachment_ids: attachmentIds,
+        // 仅在用户显式选过模型时上报，保持默认行为与既有请求体一致
+        ...(modelOverride ? { model_override: modelOverride } : {}),
+      },
       target,
       "发送失败",
     );
@@ -294,6 +309,10 @@ export default function ChatView() {
               onRemoveAttachment={removeAttachment}
               sessionKey={sessionId ?? "new"}
               variant="landing"
+              models={models}
+              modelOverride={modelOverride}
+              onModelChange={setModelOverride}
+              defaultModelLabel={defaultModelLabel}
             />
           </div>
           <p className="text-xs text-muted-foreground">
@@ -405,6 +424,10 @@ export default function ChatView() {
           onAttach={attach}
           onRemoveAttachment={removeAttachment}
           sessionKey={sessionId ?? "new"}
+          models={models}
+          modelOverride={modelOverride}
+          onModelChange={setModelOverride}
+          defaultModelLabel={defaultModelLabel}
         />
       </div>
       {openCitation && (

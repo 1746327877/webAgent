@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -96,6 +96,17 @@ class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=8000)
     mentions: list[uuid.UUID] = Field(default_factory=list, max_length=2)
     attachment_ids: list[uuid.UUID] = Field(default_factory=list, max_length=3)
+    model_override: str | None = Field(default=None, max_length=64)
+
+    @field_validator("model_override")
+    @classmethod
+    def _validate_model_override(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("model_override 不能为空")
+        return value
 
 
 async def _owned_pending_attachments(
@@ -186,6 +197,7 @@ async def post_message(
             user_content=body.content,
             session_factory=factory,
             model_manager=manager,
+            model_override=body.model_override,
             image_paths=image_paths or None,
             document_files=document_files or None,
             attachment_ids=[att.id for att in attachments] or None,

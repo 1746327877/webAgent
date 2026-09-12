@@ -27,6 +27,7 @@ vi.mock("react-virtuoso", () => ({
 const mockState = vi.hoisted(() => ({
   messages: [] as MessageItemData[],
   agents: [] as { id: string; name: string; emoji: string }[],
+  models: [] as { name: string; size_mb: number | null }[],
   session: { id: "s1", agent_id: "a1" } as { id: string; agent_id: string | null },
   lastPath: "",
   lastBody: null as unknown,
@@ -50,6 +51,7 @@ vi.mock("@/api/agents", () => ({
     },
   }),
   useAgents: () => ({ data: mockState.agents }),
+  useModels: () => ({ data: mockState.models }),
 }));
 
 // 流式事件按序同步派发后挂起，便于断言叠加层渲染（结束后会被 clearActive 清掉）
@@ -92,6 +94,7 @@ vi.mock("@/lib/stream", () => ({
 
 import ChatView from "@/components/chat/ChatView";
 import { useChatStreamStore } from "@/stores/chatStream";
+import { useComposerStore } from "@/stores/composer";
 
 function renderAt(sessionId: string, withSwitcher = false) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -146,10 +149,12 @@ function SessionSwitcher() {
 beforeEach(() => {
   mockState.messages = [];
   mockState.agents = [];
+  mockState.models = [];
   mockState.session = { id: "s1", agent_id: "a1" };
   mockState.lastPath = "";
   mockState.lastBody = null;
   mockState.tokens = [];
+  useComposerStore.setState({ modelOverride: null });
 });
 
 afterEach(() => {
@@ -407,6 +412,22 @@ test("切换会话清空输入框草稿", async () => {
   expect(input().value).toBe("不该带到新会话");
   await userEvent.click(screen.getByRole("button", { name: "切换会话" }));
   await waitFor(() => expect(input().value).toBe(""));
+});
+
+test("选择模型后发送携带 model_override", async () => {
+  mockState.models = [{ name: "qwen2.5:7b", size_mb: 4096 }];
+  renderAt("s1");
+  await userEvent.click(screen.getByRole("button", { name: "选择模型" }));
+  await userEvent.click(await screen.findByText("qwen2.5:7b"));
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "带模型{Enter}");
+  await waitFor(() =>
+    expect(mockState.lastBody).toEqual({
+      content: "带模型",
+      mentions: [],
+      attachment_ids: [],
+      model_override: "qwen2.5:7b",
+    }),
+  );
 });
 
 test("token 经 rAF 合帧后完整渲染", async () => {
