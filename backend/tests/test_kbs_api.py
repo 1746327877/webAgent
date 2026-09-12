@@ -42,6 +42,15 @@ async def test_upload_rejects_bad_type_and_size(client, auth_headers, monkeypatc
     assert (await client.post(f"/api/v1/kbs/{kid}/documents", files=bad, headers=auth_headers)).status_code == 415
 
 
+async def test_upload_rejects_oversized_file(client, auth_headers, monkeypatch, tmp_path):
+    monkeypatch.setattr(kbs_api, "MAX_BYTES", 10)
+    monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
+    kid = (await client.post("/api/v1/kbs", json={"name": "K"}, headers=auth_headers)).json()["id"]
+    big = {"file": ("big.md", io.BytesIO(b"x" * 11), "text/markdown")}
+    r = await client.post(f"/api/v1/kbs/{kid}/documents", files=big, headers=auth_headers)
+    assert r.status_code == 413
+
+
 async def test_delete_document_and_retry(client, auth_headers, monkeypatch, tmp_path, session_maker):
     monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
     calls: list[str] = []
@@ -58,11 +67,12 @@ async def test_delete_document_and_retry(client, auth_headers, monkeypatch, tmp_
         row.status = "failed"
         row.error = "boom"
         await db.commit()
+    calls.clear()
     r = await client.post(
         f"/api/v1/kbs/{kid}/documents/{doc['id']}/retry", headers=auth_headers
     )
     assert r.status_code == 200 and r.json()["status"] == "pending"
-    assert calls[-1] == doc["id"]
+    assert calls == [doc["id"]]
 
     d = await client.delete(f"/api/v1/kbs/{kid}/documents/{doc['id']}", headers=auth_headers)
     assert d.status_code == 204

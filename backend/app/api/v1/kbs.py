@@ -34,6 +34,9 @@ def enqueue_ingest(document_id) -> None:
 def _remove_stored_file(stored_name: str | None) -> None:
     if not stored_name:
         return
+    # 落盘名恒为 "{uuid}.{ext}"；含路径分隔符的脏数据一律拒绝，避免越界删除
+    if "/" in stored_name or "\\" in stored_name:
+        return
     try:
         (Path(settings.upload_dir) / stored_name).unlink(missing_ok=True)
     except OSError:
@@ -109,15 +112,19 @@ async def upload_document(
     path = Path(settings.upload_dir) / stored_name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
-    doc = await kb_service.create_document(
-        db,
-        kb,
-        name=file.filename or stored_name,
-        ext=ext,
-        size=len(content),
-        user=user,
-        stored_name=stored_name,
-    )
+    try:
+        doc = await kb_service.create_document(
+            db,
+            kb,
+            name=(file.filename or stored_name)[:255],
+            ext=ext,
+            size=len(content),
+            user=user,
+            stored_name=stored_name,
+        )
+    except Exception:
+        _remove_stored_file(stored_name)  # 建行失败时清理孤儿文件
+        raise
     enqueue_ingest(doc.id)
     return doc
 
