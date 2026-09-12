@@ -146,3 +146,27 @@ async def test_run_ingest_cancelled_marks_failed_and_reraises(session_maker, tmp
         doc = await db.get(Document, uuid.UUID(doc_id))
         assert doc.status == "failed"
         assert doc.error == "处理超时或被取消"
+
+
+async def test_run_ingest_reuses_single_provider(session_maker, tmp_path):
+    from app.ai.rag.pipeline import run_ingest
+
+    doc_id, _ = await _seed_doc(session_maker, tmp_path, content="段落一。\n\n段落二。\n\n段落三。")
+    created: list[object] = []
+    closed: list[int] = []
+
+    class FakeProvider:
+        def __init__(self):
+            created.append(self)
+
+        async def embed(self, texts, model):
+            return [[0.0] * 1024 for _ in texts]
+
+        async def aclose(self):
+            closed.append(1)
+
+    def factory() -> FakeProvider:
+        return FakeProvider()
+
+    await run_ingest(doc_id, provider_factory=factory, upload_dir=str(tmp_path))
+    assert len(created) == 1 and closed == [1]
