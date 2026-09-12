@@ -20,6 +20,12 @@ def test_nginx_proxies_api_and_disables_buffering():
     assert "backend:8000" in text
 
 
+def test_nginx_allows_large_uploads():
+    text = (ROOT / "frontend" / "nginx.conf").read_text(encoding="utf-8")
+    # 后端文档 20MB / 图片 5MB，nginx 默认 1m 会在到达 FastAPI 前 413
+    assert "client_max_body_size 25m;" in text
+
+
 def test_dockerfiles_use_locked_installs():
     backend = (ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
     frontend = (ROOT / "frontend" / "Dockerfile").read_text(encoding="utf-8")
