@@ -38,11 +38,60 @@
 - M4 遗留清偿：模型状态降级（Ollama 不可用回退最近快照）、接力停止语义（排队回合可取消）、会话切换重置 Composer 草稿/提及、孤儿附件 TTL 清理
 - 告警（按计划砍除，延后）：`alert_rules` 阈值规则 + ARQ 每分钟评估 + 站内铃铛红点/横幅未实现；数据表已随迁移建好但无对应 API/UI，详见「已知延后项」
 
-## 快速开始
+## 功能（M6 打磨与发布）
+
+- 思考链：R1 内联 `<think>` 跨 chunk 解析；流式自动展开 +「思考中…」，完成后折叠为「已深度思考 · 用时 x.xs」；全局默认展开开关（侧栏 🧠）
+- OpenAI 兼容端点：`POST /v1/chat/completions`（stream/non-stream），`model=agent:{id}`，API Key 管理见 `/keys`（明文仅创建时展示一次）
+- Docker 全链路：`docker compose up` 一键起 postgres/redis/backend/worker/frontend（Ollama 仍在宿主机，经 host.docker.internal 接入）
+- 前端打磨：rAF 合帧流式渲染 + 高吞吐降级为纯文本 + 错误内联重试；暗色/亮色主题切换；消息列表虚拟滚动（react-virtuoso）
+- 演示数据：`python -m scripts.seed_all` 一键灌齐（账号/智能体/知识库/千条会话/旗舰演示会话）
+
+## 一键启动（Docker，推荐）
+
+前置：Docker Desktop + 宿主机 Ollama（至少 `ollama pull qwen2.5:7b-instruct-q4_K_M`；接力争演示再拉 `deepseek-r1:latest`，图片演示拉 `qwen2.5vl:7b`，知识库演示拉 `bge-m3`）。
+
+1. 可选：`Copy-Item .env.example .env` 并修改 `PG_PWD` / `JWT_SECRET`（不创建也能跑，默认值仅供本机演示）
+2. `docker compose up -d --build`
+3. 打开 http://localhost:8080 ，用 `demo / Demo123456` 登录（后端容器启动时自动执行迁移 + `scripts.seed_all`）
+4. 排障：`docker compose ps` 看健康状态；`docker compose logs -f backend` 看启动日志；`http://localhost:8000/docs` 看 Swagger
+5. 停止：`docker compose down`（保留数据卷）；`docker compose down -v` 清空数据库与上传文件
+
+架构总览：
+
+```mermaid
+flowchart LR
+    subgraph Client["浏览器"]
+        UI["React 19 SPA<br/>Zustand 流式 / TanStack Query CRUD"]
+    end
+    subgraph API["FastAPI 单体（AI 网关 = 独立模块）"]
+        REST["REST /api/v1 + OpenAI /v1"]
+        SSE["SSE 流式对话"]
+        RT["AgentRuntime ReAct"]
+        MM["ModelManager 单槽位"]
+        RP["RAG 混合检索"]
+        OB["spans 观测"]
+    end
+    subgraph Data["数据层"]
+        PG[("PostgreSQL 16 + pgvector")]
+        RD[("Redis + ARQ")]
+        FS[("uploads/")]
+    end
+    OL["Ollama :11434（宿主机）"]
+    UI --> REST
+    UI --> SSE
+    SSE --> RT --> MM --> OL
+    RT --> RP --> PG
+    RT --> OB --> PG
+    RP --> FS
+```
+
+## 快速开始（本地开发）
+
+与「一键启动」二选一：本地开发流前端跑 5173、后端跑 8000，只需用 compose 起 postgres 与 redis（不要直接 `docker compose up` 全量起，会占用 8000/8080 端口）。
 
 1. 安装依赖：Docker Desktop、Ollama（`OLLAMA_MODELS` 指向数据盘）、uv（Python 3.12+）、Node 20+ / pnpm
 2. 拉取模型：`ollama pull qwen2.5:7b-instruct-q4_K_M`；M4 演示另需 `ollama pull deepseek-r1:latest` 与 `ollama pull qwen2.5vl:7b`（调度器按需加载，显存不足时自动换出）
-3. 起基础设施：`docker compose up -d`
+3. 起基础设施：`docker compose up -d postgres redis`
 4. 起后端：`cd backend && uv sync && uv run alembic upgrade head && uv run python -m scripts.seed && uv run uvicorn app.main:app --reload --port 8000`
 5. 起解析 worker（新终端）：`cd backend && uv run arq app.workers.settings.WorkerSettings`（上传文档需要 worker 运行）
 6. 起前端：`cd frontend && pnpm i && pnpm dev` → http://localhost:5173（演示账号 demo / Demo123456；登录后左下角「📊 可观测性」进入 `/admin`）
@@ -51,6 +100,7 @@
 
 ```powershell
 cd backend
+uv run python -m scripts.seed_all             # 一键灌齐（等价于以下四条，幂等可重复；Docker 首启也调用它）
 uv run python -m scripts.seed                 # 创建 demo / Demo123456
 uv run python -m scripts.seed_agents          # 创建 4 个预置智能体（通用助手 / 代码专家 / 时间管家 / 深度思考）
 uv run python -m scripts.seed_demo_sessions   # 为 demo 用户创建 1000 个会话与一组演示问答
@@ -63,29 +113,40 @@ uv run python -m scripts.seed_kb              # 创建演示知识库「Java 并
 
 问完一轮后，聊天页智能体标题栏的「查看调用链」可下钻该条回答的 span waterfall（llm / tool / retrieval / model_switch）与 input/output JSON；左下角「📊 可观测性」进入 `/admin` 查看全局指标（数据来自 spans 与分钟级 HTTP 计数）。
 
-## 30 秒演示（可观测性）
+## 30 秒演示（视频/GIF）
 
-前置：`docker compose up -d`；后端 `cd backend && uv run alembic upgrade head && uv run uvicorn app.main:app --reload --port 8000`；另开终端跑 `uv run arq app.workers.settings.WorkerSettings`（知识库解析需要）；前端 `cd frontend && pnpm dev`；用 demo / Demo123456 登录。
+前置：按「一键启动（Docker）」起服务并用 `demo / Demo123456` 登录（`scripts.seed_all` 已备好知识库与「旗舰演示」会话）。
 
-1. 产生调用链：进入「代码专家」会话，提一个知识库问题并 `@深度思考` 接力，另上传一张图片提一个问。预期：接力输出两条助手消息（各自标注所属智能体），模型在后台自动热切换（可在调用链的 `model_switch` span 中查看：qwen2.5 → deepseek-r1；图片回合切换到 `qwen2.5vl:7b`）；一轮问答产生 llm / tool（kb_search）/ retrieval / model_switch 四类 span。
-2. 核对聚合指标：请求 `GET /api/v1/admin/metrics/overview?hours=24`（Swagger 或带登录态）。预期：`cards.llm_calls ≥ 3`、`cards.model_switches ≥ 1`、`cards.retrieval_calls ≥ 1`、`cards.prompt_tokens > 0`、`http.requests > 0`。
-3. 全局仪表盘：左下角「📊 可观测性」进入 `/admin`。预期：指标卡片与请求/Token 趋势、智能体活跃排行、Token 分布、显存曲线均有数据；切「7 天」不报错。
-4. 会话调用链：回到聊天页，点智能体标题栏「查看调用链」进入 `/admin/sessions/:sessionId`（左侧默认选中最新助手消息，可切换）。预期：waterfall 出现 llm / tool / retrieval 条（接力/图片回合含 model_switch）；点 tool 条，抽屉展示 input/output JSON 树与耗时。
-5. 筛选与导出：在会话详情「工具日志」区筛选 type=tool、status=ok，点「导出 CSV」。预期：文件用 Excel 打开无中文乱码（UTF-8 BOM），行数与筛选结果一致（CSV 为全量筛选结果，不受表格 200 行上限影响）。
+| 时间 | 操作 | 看点 |
+|---|---|---|
+| 0-8s | 「代码专家」提问知识库问题 | 引用角标 + 回答依据（RAG 溯源） |
+| 8-16s | 输入 `@` 选「深度思考」发送 | 模型热切换 + 思考链自动展开/折叠（显存调度） |
+| 16-24s | 点「查看调用链」 | llm/tool/retrieval/model_switch waterfall + span JSON |
+| 24-30s | 打开「📊 可观测性」 | 指标卡片 + 显存曲线（数据面） |
 
-> 原第 6 步（告警规则 + 评估 + 站内通知）已按计划砍除，见下方「已知延后项」。
+录制与导出：Windows 用 Xbox Game Bar / ScreenToGif 录 30 秒 → 导出 GIF（≤ 8MB，宽 800，15fps：`ffmpeg -i demo.mp4 -vf "fps=15,scale=800:-1" docs/assets/demo.gif`）→ 放置 `docs/assets/demo.gif`。图片占位见 `docs/assets/README.md`。
+
+<!-- 录制完成后取消下一行注释，即得 README 顶部演示图
+![30 秒演示](docs/assets/demo.gif)
+-->
 
 ## 已知延后项（含按计划砍除项，记录备查）
 
-- **告警规则 + 评估任务 + 站内通知（Task 10，按计划有意砍除）**：M5 计划与开发路线图均将本项标注为【可砍】，收尾时按砍项优先级决定跳过，非遗漏；迁移已建好 `alert_rules` / `alert_events` 表（闲置无害）。阈值规则 API、ARQ 每分钟评估、仪表盘铃铛红点/横幅留待 M6.x 或 Phase 2 复活。设计 08.5 明确不做的告警 webhook 预留字段、短信/钉钉通知同列于此。
-- **`mv_metrics_hourly` 物化视图未启用**：设计 08.4 的 MV 是规模化优化；M5 以等价的即时聚合 SQL（`date_trunc('hour')` + `percentile_cont` + `FILTER`，走 `idx_spans_agg`）实现，换来精确的 p95 重聚合与天然的多用户过滤；个人规模（90 天保留）下无性能问题。MV + 每分钟 REFRESH 留作 M6/Docker 部署优化项。
-- **成本三视角（等效 $ / 显存成本切换 chip）**：依赖 `models.reference_price_in/out` 注册表（设计 02 的 `models` 表尚未建），M5 指标口径为 Token 量 + GPU 时间。
-- **数据保留清理任务**（spans 90 天 / model_events 30 天 / HTTP 计数 7 天每日清理）：与 M6 运维/Docker 一起做。
-- **后台「模型管理」页**（手动 load/unload 按钮）与 `/api/v1/models/{name}/load|unload`（设计 07.6）：M5 仪表盘只读展示显存曲线。
-- **多 worker 一致性**：`CANCEL_SESSIONS` / ModelManager / HTTP 内存计数当前按单 worker 假设（uvicorn 单进程），与 M4 已知限制一致。
-- 思考链折叠 UI、OpenAI 兼容端点、Docker 化、虚拟滚动打磨：M6。
+- **告警规则 + 评估任务 + 站内通知（M5 Task 10，按计划有意砍除）**：`alert_rules` / `alert_events` 表已随迁移建好但无 API/UI；阈值规则、ARQ 每分钟评估、仪表盘铃铛红点留待 M6.x 或 Phase 2 复活（非遗漏）。设计 08.5 明确不做的告警 webhook 预留字段、短信/钉钉通知同列于此。
+- **后台「模型管理」页（M6 Task 2，按计划有意砍除）**：`POST /api/v1/models/{name}/load|unload` 已随 M6 Task 1 交付（可经 Swagger 或 curl 手动操作），被砍的是仪表盘上的手动 load/unload 管理页（计划标注【可砍】）；显存曲线仍在 `/admin` 只读展示。
+- **数据保留清理任务**（spans 90 天 / model_events 30 天 / HTTP 计数 7 天）：设计 02.4 要求，M5 延后至 M6；本期聚焦发布链路未纳入，作为上线后第一批运维项（一个 `retention_service.py` + lifespan 每日循环即可）。
+- **`mv_metrics_hourly` 物化视图未启用**：M5 以等价的即时聚合 SQL（`date_trunc('hour')` + `percentile_cont` + `FILTER`，走 `idx_spans_agg`）实现；个人规模（90 天保留）无性能问题，MV + 每分钟 REFRESH 留作规模化优化。
+- **历史 spans 的 `user_id` 未回填**：`spans.user_id` 为可空列且无索引（M3 建表），M5 起的埋点才写入归属用户；此前的旧 span 行为 NULL，仪表盘/调用链按当前用户过滤时自然不含这些历史数据。需要时可在保留任务里一并回填或清理。
+- **仪表盘打磨（M5 台账遗留）**：空态时四张图整体隐藏（其余图有数也不显示）；智能体活跃排行柱值为 tokens 但排序按 llm_calls；切 24h/7d/30d 无 keepPreviousData 会闪加载态；时间轴为 UTC 字面量（非本地时区）。
+- **成本三视角（等效 $ / 显存成本切换 chip）**：依赖设计 02 的 `models` 注册表（`reference_price_in/out`），仍未建表；M6 指标口径维持 Token 量 + GPU 时间。
+- **OpenAI 端点 v1 边界**：只接受 `model=agent:{id}`（校验归属，他人智能体 404）；不透传 thinking/tool_call、不执行工具/知识库检索、不持久化会话消息；采样参数使用请求值（未传时端点默认 0.7 / 0.9 / 2048），不读取智能体参数配置；会话映射与 function calling 兼容留待后续按需扩展。
+- **`web_search` / `http_request` 工具**：可砍项优先级第 4，保留 `kb_search` + `time_now` 的 function calling 演示能力。
+- **多 worker 一致性**：`CANCEL_SESSIONS` / ModelManager / HTTP 内存计数仍按单 worker 假设（与 M4/M5 已知限制一致），容器部署默认单 uvicorn 进程。
+- **前端 per-message Zustand slice 的完整形态**：设计 09.2 的「仅该消息组件订阅重渲染」以 TokenBuffer rAF 合帧 + 单活跃流对象近似达成（帧内 ≤60 次提交）；进一步的按消息切片重构收益有限，记录备查。
+- **Lighthouse 分数记录**：路线图 M6 的 Lighthouse ≥ 85 为人工验收项，结果记录在 PR/README（不做 CI 门禁）。
 
 ## 文档
 
 - 设计文档：`docs/设计/`
 - 实施计划：`docs/superpowers/plans/`
+- 演示素材（GIF 占位与录制说明）：`docs/assets/README.md`
