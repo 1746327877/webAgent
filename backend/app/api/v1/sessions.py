@@ -101,7 +101,7 @@ class MessageIn(BaseModel):
 async def _owned_pending_attachments(
     db: AsyncSession, session: Session, ids: list[uuid.UUID]
 ) -> list[Attachment]:
-    """本会话下尚未绑定消息的图片附件；顺序与请求一致；缺失或越权一律 404。"""
+    """本会话下尚未绑定消息的附件（图片或文档）；顺序与请求一致；缺失或越权一律 404。"""
     if not ids:
         return []
     rows = (
@@ -110,7 +110,6 @@ async def _owned_pending_attachments(
                 Attachment.id.in_(ids),
                 Attachment.session_id == session.id,
                 Attachment.message_id.is_(None),
-                Attachment.kind == "image",
             )
         )
     ).all()
@@ -163,7 +162,19 @@ async def post_message(
 ):
     session = await session_service.get_owned_session(db, user, sid)
     attachments = await _owned_pending_attachments(db, session, body.attachment_ids)
-    image_paths = [str(Path(settings.upload_dir) / att.file_path) for att in attachments]
+    upload_root = Path(settings.upload_dir)
+    image_paths = [
+        str(upload_root / att.file_path) for att in attachments if att.kind == "image"
+    ]
+    document_files = [
+        (
+            str(upload_root / att.file_path),
+            Path(att.file_path).suffix.lstrip(".").lower(),
+            att.original_name,
+        )
+        for att in attachments
+        if att.kind == "document"
+    ]
 
     async def gen():
         # 消费上一轮遗留的会话级停止标记，避免误杀本次请求的接力
@@ -176,6 +187,7 @@ async def post_message(
             session_factory=factory,
             model_manager=manager,
             image_paths=image_paths or None,
+            document_files=document_files or None,
             attachment_ids=[att.id for att in attachments] or None,
         ):
             yield chunk

@@ -12,7 +12,12 @@ interface MentionAgent {
 
 export interface PendingAttachment {
   id: string;
-  previewUrl: string;
+  /** 图片预览 objectURL；文档无预览 */
+  previewUrl?: string;
+  /** 原始文件名（chip 展示） */
+  name?: string;
+  /** image | document；缺省时按 previewUrl 推断 */
+  kind?: string;
 }
 
 interface Props {
@@ -31,6 +36,8 @@ const MENTION_TAIL = /@([^\s@]*)$/;
 const MAX_MENTIONS = 2;
 /** 后端 MessageIn.attachment_ids 限制 max_length=3，前端同样封顶，避免必然 422 */
 export const MAX_ATTACHMENTS = 3;
+/** 与后端 ALLOWED_EXTS 对齐：图片 + 常见文档 */
+export const ATTACH_ACCEPT = ".png,.jpg,.jpeg,.webp,.pdf,.md,.markdown,.txt,.docx";
 
 export default function Composer({
   onSend,
@@ -103,40 +110,60 @@ export default function Composer({
     <div className="flex flex-col gap-2 border-t p-3">
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {attachments.map((attachment) => (
-            <div key={attachment.id} className="relative">
-              <img
-                src={attachment.previewUrl}
-                alt="图片预览"
-                className="h-14 w-14 rounded-md border object-cover"
-              />
-              <button
-                type="button"
-                aria-label="移除图片"
-                className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[10px] leading-none text-background"
-                onClick={() => onRemoveAttachment?.(attachment.id)}
+          {attachments.map((attachment) => {
+            const isImage = attachment.kind
+              ? attachment.kind === "image"
+              : Boolean(attachment.previewUrl);
+            return (
+              <div
+                key={attachment.id}
+                className="relative flex items-center gap-2 rounded-md border bg-muted/40 py-1 pr-6 pl-1"
               >
-                ×
-              </button>
-            </div>
-          ))}
+                {isImage && attachment.previewUrl ? (
+                  <img
+                    src={attachment.previewUrl}
+                    alt="图片预览"
+                    className="h-12 w-12 rounded object-cover"
+                  />
+                ) : (
+                  <span
+                    aria-hidden
+                    className="flex h-12 w-12 items-center justify-center text-lg"
+                  >
+                    📄
+                  </span>
+                )}
+                {attachment.name && (
+                  <span className="max-w-40 truncate text-xs">{attachment.name}</span>
+                )}
+                <button
+                  type="button"
+                  aria-label="移除附件"
+                  className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[10px] leading-none text-background"
+                  onClick={() => onRemoveAttachment?.(attachment.id)}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
       {attachCap && attachHint && (
-        <p className="text-xs text-muted-foreground">最多上传 {MAX_ATTACHMENTS} 张图片</p>
+        <p className="text-xs text-muted-foreground">最多上传 {MAX_ATTACHMENTS} 个附件</p>
       )}
       <div className="flex gap-2">
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp"
-          aria-label="选择图片"
+          accept={ATTACH_ACCEPT}
+          aria-label="上传附件"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = ""; // 允许连续选择同一文件
             if (!file) return;
-            // 已满 3 张时拒绝第 4 张并提示（与 mention 上限的交互一致）
+            // 已满 3 个时拒绝第 4 个并提示（与 mention 上限的交互一致）
             if (attachCap) {
               setAttachHint(true);
               return;
@@ -149,7 +176,6 @@ export default function Composer({
           type="button"
           variant="outline"
           size="sm"
-          aria-label="添加图片"
           onClick={() => {
             if (attachCap) {
               setAttachHint(true);
@@ -158,7 +184,7 @@ export default function Composer({
             fileRef.current?.click();
           }}
         >
-          图片
+          上传附件
         </Button>
         <div className="relative flex-1">
           {mentionQuery !== null && options.length > 0 && (

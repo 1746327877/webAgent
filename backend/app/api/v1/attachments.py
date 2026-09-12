@@ -18,15 +18,24 @@ from app.services import session_service
 
 router = APIRouter(tags=["attachments"])
 
-ALLOWED_EXTS = {"png", "jpg", "jpeg", "webp"}
-MAX_BYTES = 5 * 1024 * 1024
+IMAGE_EXTS = {"png", "jpg", "jpeg", "webp"}
+# 文档走文本提取注入，与知识库上传的类型保持一致（额外放宽 markdown 后缀）
+DOCUMENT_EXTS = {"pdf", "md", "markdown", "txt", "docx"}
+ALLOWED_EXTS = IMAGE_EXTS | DOCUMENT_EXTS
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
 MIME_BY_EXT = {
     "png": "image/png",
     "jpg": "image/jpeg",
     "jpeg": "image/jpeg",
     "webp": "image/webp",
+    "pdf": "application/pdf",
+    "md": "text/markdown",
+    "markdown": "text/markdown",
+    "txt": "text/plain",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
-# 魔数前缀粗校验：扩展名与实际内容明显不符时拒绝（不做完整图片解码）
+# 魔数前缀粗校验：扩展名与实际内容明显不符时拒绝（不做完整图片解码；文档无稳定魔数不校验）
 MAGIC_PREFIXES = {
     "png": (b"\x89PNG",),
     "jpg": (b"\xff\xd8\xff",),
@@ -46,6 +55,10 @@ def stored_path(stored_name: str) -> Path:
     return Path(settings.upload_dir) / stored_name
 
 
+def _too_large_detail(is_image: bool) -> str:
+    return "图片超过 5MB" if is_image else "文档超过 20MB"
+
+
 @router.post("/sessions/{sid}/attachments", response_model=AttachmentOut, status_code=201)
 async def upload_attachment(
     sid: uuid.UUID,
@@ -56,14 +69,19 @@ async def upload_attachment(
     session = await session_service.get_owned_session(db, user, sid)
     ext = (file.filename or "").rsplit(".", 1)[-1].lower()
     if ext not in ALLOWED_EXTS:
-        raise HTTPException(status_code=415, detail="仅支持 png/jpg/jpeg/webp 图片")
+        raise HTTPException(
+            status_code=415,
+            detail="仅支持 png/jpg/jpeg/webp 图片与 pdf/md/markdown/txt/docx 文档",
+        )
+    is_image = ext in IMAGE_EXTS
+    max_bytes = MAX_IMAGE_BYTES if is_image else MAX_DOCUMENT_BYTES
     # multipart 解析已完成，先用 size 预检；随后整读时再按实际长度二次校验
-    if file.size is not None and file.size > MAX_BYTES:
-        raise HTTPException(status_code=413, detail="图片超过 5MB")
+    if file.size is not None and file.size > max_bytes:
+        raise HTTPException(status_code=413, detail=_too_large_detail(is_image))
     content = await file.read()
-    if len(content) > MAX_BYTES:
-        raise HTTPException(status_code=413, detail="图片超过 5MB")
-    if not any(content.startswith(prefix) for prefix in MAGIC_PREFIXES[ext]):
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail=_too_large_detail(is_image))
+    if is_image and not any(content.startswith(prefix) for prefix in MAGIC_PREFIXES[ext]):
         raise HTTPException(status_code=415, detail="文件内容与图片类型不符")
 
     stored_name = f"{uuid.uuid4()}.{ext}"
@@ -78,7 +96,7 @@ async def upload_attachment(
             original_name=(file.filename or stored_name)[:255],
             mime_type=MIME_BY_EXT[ext],
             size_bytes=len(content),
-            kind="image",
+            kind="image" if is_image else "document",
         )
         db.add(attachment)
         await db.commit()

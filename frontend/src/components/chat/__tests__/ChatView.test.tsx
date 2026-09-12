@@ -309,7 +309,7 @@ test("图片先上传再随消息发送，用户消息附件经鉴权 blob 渲�
 
   // 选择图片：先 POST 上传，返回 id 后显示预览 chip
   await userEvent.upload(
-    screen.getByLabelText("选择图片"),
+    screen.getByLabelText("上传附件"),
     new File(["png"], "dog.png", { type: "image/png" }),
   );
   expect(await screen.findByAltText("图片预览")).toBeInTheDocument();
@@ -347,7 +347,7 @@ test("切换会话丢弃待发附件，不会把旧会话的 attachment_id 发�
 
   renderAt("s1", true);
   await userEvent.upload(
-    screen.getByLabelText("选择图片"),
+    screen.getByLabelText("上传附件"),
     new File(["png"], "a.png", { type: "image/png" }),
   );
   expect(await screen.findByAltText("图片预览")).toBeInTheDocument();

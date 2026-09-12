@@ -72,7 +72,9 @@ export default function ChatView() {
   // 组件卸载时释放尚未发送的预览 objectURL
   useEffect(
     () => () => {
-      attachmentsRef.current.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+      attachmentsRef.current.forEach((a) => {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+      });
     },
     [],
   );
@@ -84,7 +86,9 @@ export default function ChatView() {
     sessionIdRef.current = sessionId;
     if (prevSessionRef.current === sessionId) return;
     prevSessionRef.current = sessionId;
-    attachmentsRef.current.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    attachmentsRef.current.forEach((a) => {
+      if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+    });
     attachmentsRef.current = [];
     setAttachments([]);
   }, [sessionId]);
@@ -164,7 +168,7 @@ export default function ChatView() {
         target = created.id;
         navigate(`/sessions/${created.id}`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "图片上传失败", target ?? null);
+        setError(err instanceof Error ? err.message : "附件上传失败", target ?? null);
         return;
       }
     }
@@ -175,27 +179,35 @@ export default function ChatView() {
       body: form,
     });
     if (!res.ok) {
-      setError(`图片上传失败（HTTP ${res.status}）`, target);
+      setError(`附件上传失败（HTTP ${res.status}）`, target);
       return;
     }
-    const data = (await res.json()) as { id: string };
+    const data = (await res.json()) as { id: string; kind?: string; original_name?: string };
     // 上传期间会话已切换：丢弃结果，避免旧会话的附件进入新会话 chips
     if (sessionIdRef.current !== target) return;
+    const isImage = data.kind === "image";
     setAttachments((prev) => [
       ...prev,
-      { id: data.id, previewUrl: URL.createObjectURL(file) },
+      {
+        id: data.id,
+        name: data.original_name ?? file.name,
+        kind: data.kind,
+        previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+      },
     ]);
   }
 
   function removeAttachment(id: string) {
     const hit = attachments.find((a) => a.id === id);
-    if (hit) URL.revokeObjectURL(hit.previewUrl);
+    if (hit?.previewUrl) URL.revokeObjectURL(hit.previewUrl);
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
   async function send(text: string, mentions: string[] = [], attachmentIds: string[] = []) {
     // 发送即清空 chips 并释放预览 URL；持久化缩略图改走鉴权 blob
-    attachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    attachments.forEach((a) => {
+      if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+    });
     setAttachments([]);
     let target = sessionId;
     if (!target) {

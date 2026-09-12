@@ -71,24 +71,52 @@ test("选择图片上报 onAttach，chip 预览可移除，发送携带 attachme
       onSend={onSend}
       onStop={vi.fn()}
       generating={false}
-      attachments={[{ id: "att1", previewUrl: "blob:preview" }]}
+      attachments={[{ id: "att1", previewUrl: "blob:preview", name: "cat.png", kind: "image" }]}
       onAttach={onAttach}
       onRemoveAttachment={onRemoveAttachment}
     />,
   );
   expect(screen.getByAltText("图片预览")).toHaveAttribute("src", "blob:preview");
-  await userEvent.click(screen.getByRole("button", { name: "移除图片" }));
+  expect(screen.getByText("cat.png")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "移除附件" }));
   expect(onRemoveAttachment).toHaveBeenCalledWith("att1");
 
   const file = new File(["png"], "cat.png", { type: "image/png" });
-  await userEvent.upload(screen.getByLabelText("选择图片"), file);
+  await userEvent.upload(screen.getByLabelText("上传附件"), file);
   expect(onAttach).toHaveBeenCalledWith(file);
 
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "看图{Enter}");
   expect(onSend).toHaveBeenCalledWith("看图", [], ["att1"]);
 });
 
-test("附件达到 3 张后拒绝第 4 张并提示，发送最多 3 个 id", async () => {
+test("附件选择接受图片与常见文档类型", async () => {
+  render(<Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} />);
+  const input = screen.getByLabelText("上传附件");
+  expect(input).toHaveAttribute("type", "file");
+  expect(input.getAttribute("accept")).toContain(".pdf");
+  expect(input.getAttribute("accept")).toContain(".docx");
+  expect(input.getAttribute("accept")).toContain(".md");
+  expect(screen.getByRole("button", { name: "上传附件" })).toBeInTheDocument();
+});
+
+test("文档 chip 显示文件名并可移除", async () => {
+  const onRemoveAttachment = vi.fn();
+  render(
+    <Composer
+      onSend={vi.fn()}
+      onStop={vi.fn()}
+      generating={false}
+      attachments={[{ id: "doc1", name: "会议纪要.pdf", kind: "document" }]}
+      onRemoveAttachment={onRemoveAttachment}
+    />,
+  );
+  expect(screen.getByText("会议纪要.pdf")).toBeInTheDocument();
+  expect(screen.queryByAltText("图片预览")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "移除附件" }));
+  expect(onRemoveAttachment).toHaveBeenCalledWith("doc1");
+});
+
+test("附件达到 3 个后拒绝第 4 个并提示，发送最多 3 个 id", async () => {
   const onAttach = vi.fn();
   const onSend = vi.fn();
   render(
@@ -101,11 +129,11 @@ test("附件达到 3 张后拒绝第 4 张并提示，发送最多 3 个 id", as
     />,
   );
   await userEvent.upload(
-    screen.getByLabelText("选择图片"),
+    screen.getByLabelText("上传附件"),
     new File(["png"], "d.png", { type: "image/png" }),
   );
   expect(onAttach).not.toHaveBeenCalled();
-  expect(await screen.findByText("最多上传 3 张图片")).toBeInTheDocument();
+  expect(await screen.findByText("最多上传 3 个附件")).toBeInTheDocument();
 
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "三张{Enter}");
   expect(onSend).toHaveBeenCalledWith("三张", [], ["att1", "att2", "att3"]);

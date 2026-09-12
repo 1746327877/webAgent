@@ -25,6 +25,8 @@ MAX_TOOL_ROUNDS = 5
 TOOL_TIMEOUT_S = 30.0
 TOOL_RESULT_MAX = 8000
 TOOL_PREVIEW_LEN = 200
+# 单个附件注入上下文上限，防止超大文档挤爆 prompt
+MAX_DOCUMENT_CONTEXT_CHARS = 8000
 CANCEL_FLAGS: dict[uuid.UUID, bool] = {}
 CANCEL_SESSIONS: set[uuid.UUID] = set()  # 会话级停止标记，供排队中的接力回合消费
 
@@ -196,6 +198,40 @@ def _encode_image(path: str) -> str:
     return base64.b64encode(Path(path).read_bytes()).decode()
 
 
+def _extract_document_text(path: str, file_type: str) -> str:
+    """复用 RAG 解析器抽取文档纯文本（同步重活，调用方放线程池）。"""
+    from app.ai.rag.parsers import extract_text
+
+    pages = extract_text(Path(path), file_type)
+    return "\n".join(text for _, text in pages)
+
+
+async def _document_context_notes(
+    document_files: list[tuple[str, str, str]],
+) -> list[str]:
+    """逐个抽取文档文本并截断；任一文件失败只产出提示，不影响本轮生成。"""
+    extracted = await asyncio.gather(
+        *(
+            asyncio.to_thread(_extract_document_text, path, ext)
+            for path, ext, _ in document_files
+        ),
+        return_exceptions=True,
+    )
+    notes: list[str] = []
+    for (_path, _ext, name), result in zip(document_files, extracted, strict=False):
+        if isinstance(result, BaseException):
+            notes.append(f"【附件：{name}】文本提取失败，已跳过该附件。")
+            continue
+        text = (result or "").strip()
+        if not text:
+            notes.append(f"【附件：{name}】未提取到文本内容。")
+            continue
+        truncated = text[:MAX_DOCUMENT_CONTEXT_CHARS]
+        suffix = "（内容已截断）" if len(text) > MAX_DOCUMENT_CONTEXT_CHARS else ""
+        notes.append(f"【附件：{name}{suffix}】\n{truncated}")
+    return notes
+
+
 def _merge_usage(acc: dict | None, new: dict | None) -> dict | None:
     if new is None:
         return acc
@@ -285,12 +321,14 @@ async def run_generation(
     agent_override: uuid.UUID | None = None,
     relay_instruction: str | None = None,
     image_paths: list[str] | None = None,
+    document_files: list[tuple[str, str, str]] | None = None,
     attachment_ids: list[uuid.UUID] | None = None,
 ) -> AsyncIterator[str]:
     """user_content=None 时仅生成助手消息（重新生成/接力场景）。
 
     agent_override 指定被 @ 的智能体（接力回合），relay_instruction 注入接力指令。
     image_paths 非空时该轮切到视觉模型，并把图片 base64 附到最后一条 user 消息；
+    document_files 为 (落盘路径, 扩展名, 原始文件名) 列表，抽取文本后以 system 上下文注入；
     attachment_ids 在用户消息落库后回填 message_id。
     """
     user = await db.get(User, session.user_id)
@@ -386,6 +424,9 @@ async def run_generation(
                     *(asyncio.to_thread(_encode_image, path) for path in image_paths)
                 )
             )
+        document_notes = (
+            await _document_context_notes(document_files) if document_files else []
+        )
         messages = (
             [{"role": "system", "content": cfg.system_prompt}] if cfg.system_prompt else []
         )
@@ -394,6 +435,14 @@ async def run_generation(
         messages += await _load_history(
             db, session.id, exclude_ids=exclude_ids, rounds=cfg.history_rounds
         )
+        if document_notes:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "以下是用户本轮上传的文档内容，请结合这些资料回答：\n\n"
+                    + "\n\n".join(document_notes),
+                }
+            )
         if user_content is not None:
             user_message: dict = {"role": "user", "content": user_content}
             if image_payload:
