@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.ai.model_manager import ModelManager
 from app.ai.providers.ollama import OllamaProvider
 from app.ai.runtime import recover_stale_streaming
+from app.api.v1.openai_compat import router as openai_router
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.db import SessionLocal
@@ -81,6 +82,7 @@ async def http_metrics_middleware(request, call_next):
 
 
 app.include_router(api_router)
+app.include_router(openai_router)
 
 
 @app.get("/health")
