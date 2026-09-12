@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, expect, test, vi } from "vitest";
@@ -40,6 +41,39 @@ vi.mock("@/api/agents", () => ({
   }),
 }));
 
+// 流式事件按序同步派发后挂起，便于断言叠加层渲染（结束后会被 clearActive 清掉）
+vi.mock("@/lib/stream", () => ({
+  streamRequest: async (
+    _path: string,
+    _body: unknown,
+    onEvent: (e: { event: string; data: unknown }) => void,
+  ) => {
+    onEvent({ event: "message_start", data: { message_id: "m1" } });
+    onEvent({
+      event: "citation",
+      data: {
+        message_id: "m1",
+        ref: 1,
+        chunk_id: "k1",
+        source: "rag.md",
+        page: 3,
+        score: 0.9,
+        snippet: "混合检索片段",
+      },
+    });
+    onEvent({
+      event: "tool_call",
+      data: { message_id: "m1", id: "c1", name: "kb_search", args: { query: "x" } },
+    });
+    onEvent({
+      event: "tool_result",
+      data: { message_id: "m1", id: "c1", status: "ok", elapsed_ms: 12, preview: "命中" },
+    });
+    onEvent({ event: "token", data: { message_id: "m1", delta: "答案[1]" } });
+    await new Promise(() => {});
+  },
+}));
+
 import ChatView from "@/components/chat/ChatView";
 import { useChatStreamStore } from "@/stores/chatStream";
 
@@ -63,7 +97,14 @@ afterEach(() => {
 
 test("其他会话的流式叠加层不会泄漏到当前会话", () => {
   useChatStreamStore.setState({
-    active: { id: "m-other", sessionId: "other", content: "泄漏内容", thinking: "" },
+    active: {
+      id: "m-other",
+      sessionId: "other",
+      content: "泄漏内容",
+      thinking: "",
+      citations: [],
+      toolEvents: [],
+    },
     error: null,
   });
   renderAt("current");
@@ -74,7 +115,14 @@ test("其他会话的流式叠加层不会泄漏到当前会话", () => {
 
 test("当前会话的流式叠加层正常显示且可停止", () => {
   useChatStreamStore.setState({
-    active: { id: "m-current", sessionId: "current", content: "进行中内容", thinking: "" },
+    active: {
+      id: "m-current",
+      sessionId: "current",
+      content: "进行中内容",
+      thinking: "",
+      citations: [],
+      toolEvents: [],
+    },
     error: null,
   });
   renderAt("current");
@@ -123,4 +171,23 @@ test("空会话展示智能体欢迎语与示例", async () => {
   renderAt("s1");
   expect(await screen.findByText("贴代码给我")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "帮我 review 这段" })).toBeInTheDocument();
+});
+
+test("citation/tool 事件流式出现，点击角标打开依据抽屉", async () => {
+  renderAt("s1");
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "并发要点{Enter}");
+  // citation 事件流式渲染「回答依据」
+  expect(await screen.findByText(/回答依据/)).toBeInTheDocument();
+  expect(screen.getByText(/rag\.md/)).toBeInTheDocument();
+  // tool_call/tool_result 实时出现，不再等待 invalidate
+  expect(screen.getByText(/调用工具/)).toBeInTheDocument();
+  expect(screen.getAllByText(/kb_search/).length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText(/12ms/)).toBeInTheDocument();
+  // [1] 被 linkify 为可点击角标，点击前抽屉未展示 snippet
+  const link = screen.getByRole("link", { name: "1" });
+  expect(link).toHaveAttribute("href", "#cite-1");
+  expect(screen.queryByText("混合检索片段")).not.toBeInTheDocument();
+  await userEvent.click(link);
+  expect(await screen.findByText("混合检索片段")).toBeInTheDocument();
+  expect(screen.getByText(/第 3 页/)).toBeInTheDocument();
 });

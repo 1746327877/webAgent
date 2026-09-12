@@ -1,15 +1,32 @@
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCreateSession, useMessages, useSession, type MessageItemData } from "@/api/sessions";
+import {
+  useCreateSession,
+  useMessages,
+  useSession,
+  type Block,
+  type MessageItemData,
+} from "@/api/sessions";
 import { useAgent } from "@/api/agents";
 import { apiFetch } from "@/lib/api";
 import { streamRequest } from "@/lib/stream";
 import type { SSEEvent } from "@/lib/sse";
+import type { Citation } from "@/lib/citations";
 import Composer from "@/components/chat/Composer";
 import MessageActions from "@/components/chat/MessageActions";
 import MessageList from "@/components/chat/MessageList";
 import { Button } from "@/components/ui/button";
-import { useChatStreamStore } from "@/stores/chatStream";
+import { useChatStreamStore, type ToolEvent } from "@/stores/chatStream";
+
+/** tool_result 事件不带工具名，从同一批 tool_call 事件里补上，流式卡片才能显示名称 */
+function toolBlock(event: ToolEvent, all: ToolEvent[]): Block {
+  if (event.type === "tool_result" && !event.tool) {
+    const call = all.find((t) => t.type === "tool_call" && t.id === event.id);
+    return { ...event, tool: call?.tool };
+  }
+  return { ...event };
+}
 
 export default function ChatView() {
   const { sessionId } = useParams();
@@ -19,8 +36,19 @@ export default function ChatView() {
   const { data: messages = [] } = useMessages(sessionId);
   const { data: session } = useSession(sessionId);
   const { data: agent } = useAgent(session?.agent_id ?? undefined);
-  const { active, error, start, appendToken, appendThinking, setError, clear, clearActive } =
-    useChatStreamStore();
+  const {
+    active,
+    error,
+    start,
+    appendToken,
+    appendThinking,
+    appendCitation,
+    appendToolEvent,
+    setError,
+    clear,
+    clearActive,
+  } = useChatStreamStore();
+  const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const ownsActive = Boolean(active && active.sessionId === sessionId);
   // 错误只归其产生时的会话：发送创建场景的 error.sessionId 为 null，仅无会话时显示
   const scopedError = error && error.sessionId === (sessionId ?? null) ? error.message : null;
@@ -34,6 +62,30 @@ export default function ChatView() {
     } else if (evt.event === "thinking") {
       const data = evt.data as { delta: string; message_id: string };
       appendThinking(data.delta, data.message_id);
+    } else if (evt.event === "citation") {
+      const data = evt.data as Citation & { message_id: string };
+      appendCitation(data, data.message_id);
+    } else if (evt.event === "tool_call" || evt.event === "tool_result") {
+      const data = evt.data as {
+        message_id: string;
+        id: string;
+        name?: string;
+        args?: unknown;
+        status?: string;
+        elapsed_ms?: number;
+        preview?: string;
+      };
+      const event: ToolEvent =
+        evt.event === "tool_call"
+          ? { type: "tool_call", id: data.id, tool: data.name, args: data.args }
+          : {
+              type: "tool_result",
+              id: data.id,
+              status: data.status,
+              elapsed_ms: data.elapsed_ms,
+              preview: data.preview,
+            };
+      appendToolEvent(event, data.message_id);
     } else if (evt.event === "error") {
       setError((evt.data as { message: string }).message, targetSession);
     }
@@ -131,6 +183,8 @@ export default function ChatView() {
           role: "assistant",
           blocks: [
             ...(active.thinking ? [{ type: "thinking", content: active.thinking }] : []),
+            ...active.citations.map((c) => ({ type: "citation", ...c })),
+            ...active.toolEvents.map((e) => toolBlock(e, active.toolEvents)),
             { type: "text", content: active.content },
           ],
           status: "streaming",
@@ -145,47 +199,70 @@ export default function ChatView() {
   const showWelcome = messages.length === 0 && !streamingMessage && Boolean(agent);
 
   return (
-    <>
-      {agent && (
-        <div className="flex items-center gap-2 border-b px-4 py-2 text-sm">
-          <span>{agent.emoji}</span>
-          <span className="font-medium">{agent.name}</span>
-        </div>
-      )}
-      {showWelcome && agent ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <div className="text-4xl">{agent.emoji}</div>
-          <div>
-            <p className="font-medium">{agent.name}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{agent.welcome_msg || "开始对话吧"}</p>
+    <div className="flex min-h-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {agent && (
+          <div className="flex items-center gap-2 border-b px-4 py-2 text-sm">
+            <span>{agent.emoji}</span>
+            <span className="font-medium">{agent.name}</span>
           </div>
-          {agent.examples.length > 0 && (
-            <div className="flex flex-wrap justify-center gap-2">
-              {agent.examples.map((example) => (
-                <Button key={example} variant="outline" size="sm" onClick={() => send(example)}>
-                  {example}
-                </Button>
-              ))}
+        )}
+        {showWelcome && agent ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+            <div className="text-4xl">{agent.emoji}</div>
+            <div>
+              <p className="font-medium">{agent.name}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{agent.welcome_msg || "开始对话吧"}</p>
             </div>
-          )}
-        </div>
-      ) : (
-        <MessageList
-          items={items}
-          renderActions={(m) =>
-            m.status === "streaming" ? null : (
-              <MessageActions
-                message={m}
-                onRegenerate={regenerate}
-                onEdit={editAndResend}
-                onRate={rate}
-              />
-            )
-          }
-        />
+            {agent.examples.length > 0 && (
+              <div className="flex flex-wrap justify-center gap-2">
+                {agent.examples.map((example) => (
+                  <Button key={example} variant="outline" size="sm" onClick={() => send(example)}>
+                    {example}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <MessageList
+            items={items}
+            onOpenCitation={setOpenCitation}
+            renderActions={(m) =>
+              m.status === "streaming" ? null : (
+                <MessageActions
+                  message={m}
+                  onRegenerate={regenerate}
+                  onEdit={editAndResend}
+                  onRate={rate}
+                />
+              )
+            }
+          />
+        )}
+        {scopedError && <p className="px-4 py-2 text-sm text-red-500">出错：{scopedError}</p>}
+        <Composer onSend={send} onStop={stop} generating={ownsActive} />
+      </div>
+      {openCitation && (
+        <aside
+          aria-label="引用依据"
+          className="w-80 shrink-0 overflow-y-auto border-l p-4 text-sm"
+        >
+          <div className="mb-2 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate font-medium">{openCitation.source}</p>
+              <p className="text-xs text-muted-foreground">
+                {openCitation.page != null ? `第 ${openCitation.page} 页 · ` : ""}
+                相关度 {openCitation.score.toFixed(2)}
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setOpenCitation(null)}>
+              关闭
+            </Button>
+          </div>
+          <p className="whitespace-pre-wrap text-xs leading-relaxed">{openCitation.snippet}</p>
+        </aside>
       )}
-      {scopedError && <p className="px-4 py-2 text-sm text-red-500">出错：{scopedError}</p>}
-      <Composer onSend={send} onStop={stop} generating={ownsActive} />
-    </>
+    </div>
   );
 }

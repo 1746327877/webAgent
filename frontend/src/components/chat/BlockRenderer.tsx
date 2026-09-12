@@ -1,7 +1,16 @@
 import type { Block } from "@/api/sessions";
 import MarkdownContent from "@/components/chat/MarkdownContent";
 
-export default function BlockRenderer({ block }: { block: Block }) {
+export default function BlockRenderer({
+  block,
+  maxRef = 0,
+  onCitation,
+}: {
+  block: Block;
+  /** 传给 text 分支：本消息已有的最大引用编号 */
+  maxRef?: number;
+  onCitation?: (ref: number) => void;
+}) {
   if (block.type === "thinking") {
     return (
       <details className="mb-1 rounded border px-3 py-2 text-sm text-muted-foreground">
@@ -11,7 +20,9 @@ export default function BlockRenderer({ block }: { block: Block }) {
     );
   }
   if (block.type === "text") {
-    return <MarkdownContent content={block.content ?? ""} />;
+    return (
+      <MarkdownContent content={block.content ?? ""} maxRef={maxRef} onCitation={onCitation} />
+    );
   }
   if (block.type === "tool_call") {
     const rawArgs = block.args;
@@ -29,12 +40,13 @@ export default function BlockRenderer({ block }: { block: Block }) {
     return (
       <details className="my-1 rounded border px-3 py-2 text-xs">
         <summary className="cursor-pointer text-muted-foreground">
-          {ok ? "✅" : "⚠️"} {String(block.tool)} · {String(block.elapsed_ms ?? "")}ms
+          {ok ? "✅" : "⚠️"} {block.tool ? `${String(block.tool)} · ` : ""}
+          {String(block.elapsed_ms ?? "")}ms
           {!ok ? " · 失败" : ""}
         </summary>
         <p className="mt-1 whitespace-pre-wrap opacity-80">{String(block.preview ?? "")}</p>
       </details>
     );
   }
-  return null; // citation 等未知块忽略
+  return null; // citation 块由 MessageItem 统一渲染为 CitationList
 }

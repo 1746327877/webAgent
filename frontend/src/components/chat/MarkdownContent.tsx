@@ -2,6 +2,7 @@ import { useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
+import { linkifyCitations } from "@/lib/citations";
 import { createHighlighterCoreSync } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
@@ -101,13 +102,44 @@ function PreBlock({ children, node: _node, ...props }: ComponentPropsWithoutRef<
   );
 }
 
-const components: Components = { pre: PreBlock };
+const CITATION_PREFIX = "#cite-";
 
-export default function MarkdownContent({ content }: { content: string }) {
+export default function MarkdownContent({
+  content,
+  maxRef = 0,
+  onCitation,
+}: {
+  content: string;
+  /** 本条消息 citation 的最大编号，只有存在的编号会转为 #cite-n 锚点 */
+  maxRef?: number;
+  onCitation?: (ref: number) => void;
+}) {
+  const components: Components = {
+    pre: PreBlock,
+    a: ({ node: _node, ...props }: ComponentPropsWithoutRef<"a"> & ExtraProps) => {
+      const href = typeof props.href === "string" ? props.href : "";
+      if (href.startsWith(CITATION_PREFIX)) {
+        return (
+          <a
+            {...props}
+            className={cn(
+              "mx-0.5 rounded bg-muted px-1 align-super text-[0.7em] font-medium no-underline",
+              props.className,
+            )}
+            onClick={(e) => {
+              e.preventDefault();
+              onCitation?.(Number(href.slice(CITATION_PREFIX.length)));
+            }}
+          />
+        );
+      }
+      return <a {...props} />;
+    },
+  };
   return (
     <div className="prose prose-sm max-w-none dark:prose-invert">
       <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeShiki]} components={components}>
-        {content}
+        {linkifyCitations(content, maxRef)}
       </Markdown>
     </div>
   );
