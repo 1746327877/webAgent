@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     default_model: str = "qwen2.5:7b-instruct-q4_K_M"
     history_rounds: int = 10
+    redis_url: str = "redis://localhost:6379/0"
+    upload_dir: str = "./uploads"
+    embedding_model: str = "bge-m3"
 
 
 settings = Settings()

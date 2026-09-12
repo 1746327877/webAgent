@@ -1,0 +1,75 @@
+import io
+
+from app.api.v1 import kbs as kbs_api
+
+
+async def test_kb_crud_and_ownership(client, auth_headers):
+    r = await client.post("/api/v1/kbs", json={"name": "Java 资料"}, headers=auth_headers)
+    assert r.status_code == 201 and r.json()["name"] == "Java 资料"
+    kid = r.json()["id"]
+    lst = await client.get("/api/v1/kbs", headers=auth_headers)
+    assert [k["id"] for k in lst.json()] == [kid]
+
+    from tests.test_sessions_api import make_user
+
+    other = await make_user(client, "bob")
+    assert (await client.get(f"/api/v1/kbs/{kid}", headers=other)).status_code == 404
+    assert (await client.delete(f"/api/v1/kbs/{kid}", headers=other)).status_code == 404
+    assert (await client.delete(f"/api/v1/kbs/{kid}", headers=auth_headers)).status_code == 204
+
+
+async def test_upload_enqueues_and_lists(client, auth_headers, session_maker, monkeypatch, tmp_path):
+    calls: list[str] = []
+    monkeypatch.setattr(kbs_api, "enqueue_ingest", lambda doc_id: calls.append(str(doc_id)))
+    monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
+
+    kid = (await client.post("/api/v1/kbs", json={"name": "K"}, headers=auth_headers)).json()["id"]
+    files = {"file": ("notes.md", io.BytesIO("标题\n正文".encode()), "text/markdown")}
+    r = await client.post(f"/api/v1/kbs/{kid}/documents", files=files, headers=auth_headers)
+    assert r.status_code == 201
+    doc = r.json()
+    assert doc["status"] == "pending" and doc["filename"] == "notes.md"
+    assert calls == [doc["id"]]
+
+    lst = await client.get(f"/api/v1/kbs/{kid}/documents", headers=auth_headers)
+    assert [d["id"] for d in lst.json()] == [doc["id"]]
+
+
+async def test_upload_rejects_bad_type_and_size(client, auth_headers, monkeypatch, tmp_path):
+    monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
+    kid = (await client.post("/api/v1/kbs", json={"name": "K"}, headers=auth_headers)).json()["id"]
+    bad = {"file": ("x.exe", io.BytesIO(b"x"), "application/octet-stream")}
+    assert (await client.post(f"/api/v1/kbs/{kid}/documents", files=bad, headers=auth_headers)).status_code == 415
+
+
+async def test_delete_document_and_retry(client, auth_headers, monkeypatch, tmp_path, session_maker):
+    monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
+    calls: list[str] = []
+    monkeypatch.setattr(kbs_api, "enqueue_ingest", lambda doc_id: calls.append(str(doc_id)))
+    kid = (await client.post("/api/v1/kbs", json={"name": "K"}, headers=auth_headers)).json()["id"]
+    files = {"file": ("a.md", io.BytesIO(b"x"), "text/markdown")}
+    doc = (await client.post(f"/api/v1/kbs/{kid}/documents", files=files, headers=auth_headers)).json()
+
+    # 伪装失败态后重试
+    async with session_maker() as db:
+        from app.models import Document
+
+        row = await db.get(Document, doc["id"])
+        row.status = "failed"
+        row.error = "boom"
+        await db.commit()
+    r = await client.post(
+        f"/api/v1/kbs/{kid}/documents/{doc['id']}/retry", headers=auth_headers
+    )
+    assert r.status_code == 200 and r.json()["status"] == "pending"
+    assert calls[-1] == doc["id"]
+
+    d = await client.delete(f"/api/v1/kbs/{kid}/documents/{doc['id']}", headers=auth_headers)
+    assert d.status_code == 204
+
+
+async def test_worker_settings_shape():
+    from app.workers.settings import WorkerSettings
+
+    assert WorkerSettings.redis_settings is not None
+    assert len(WorkerSettings.functions) >= 1
