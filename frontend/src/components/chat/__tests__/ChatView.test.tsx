@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { MessageItemData } from "@/api/sessions";
@@ -89,16 +89,38 @@ vi.mock("@/lib/stream", () => ({
 import ChatView from "@/components/chat/ChatView";
 import { useChatStreamStore } from "@/stores/chatStream";
 
-function renderAt(sessionId: string) {
+function renderAt(sessionId: string, withSwitcher = false) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[`/sessions/${sessionId}`]}>
         <Routes>
-          <Route path="/sessions/:sessionId" element={<ChatView />} />
+          <Route
+            path="/sessions/:sessionId"
+            element={
+              withSwitcher ? (
+                <>
+                  <ChatView />
+                  <SessionSwitcher />
+                </>
+              ) : (
+                <ChatView />
+              )
+            }
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
+  );
+}
+
+/** 模拟侧栏客户端跳转：ChatView 复用同一组件实例，仅 sessionId 变化 */
+function SessionSwitcher() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate("/sessions/s2")}>
+      切换会话
+    </button>
   );
 }
 
@@ -298,4 +320,42 @@ test("图片先上传再随消息发送，用户消息附件经鉴权 blob 渲�
   );
   expect(mockState.lastPath).toBe("/api/v1/sessions/s1/messages");
   await waitFor(() => expect(screen.queryByAltText("图片预览")).not.toBeInTheDocument());
+});
+
+test("切换会话丢弃待发附件，不会把旧会话的 attachment_id 发到新会话", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes("/attachments")) {
+      return new Response(
+        JSON.stringify({ id: "attA", original_name: "a.png", kind: "image", size_bytes: 4 }),
+        { status: 201 },
+      );
+    }
+    return new Response(new Blob(["img"]), { status: 200 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  URL.createObjectURL = vi.fn(() => "blob:a");
+  URL.revokeObjectURL = vi.fn();
+
+  renderAt("s1", true);
+  await userEvent.upload(
+    screen.getByLabelText("选择图片"),
+    new File(["png"], "a.png", { type: "image/png" }),
+  );
+  expect(await screen.findByAltText("图片预览")).toBeInTheDocument();
+
+  // 切换会话：pending chip 必须消失且预览 URL 被释放
+  await userEvent.click(screen.getByRole("button", { name: "切换会话" }));
+  await waitFor(() => expect(screen.queryByAltText("图片预览")).not.toBeInTheDocument());
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:a");
+
+  // 新会话发送：不得携带旧会话的附件 id
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "新会话{Enter}");
+  await waitFor(() =>
+    expect(mockState.lastBody).toEqual({
+      content: "新会话",
+      mentions: [],
+      attachment_ids: [],
+    }),
+  );
+  expect(mockState.lastPath).toBe("/api/v1/sessions/s2/messages");
 });

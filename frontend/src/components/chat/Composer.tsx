@@ -28,6 +28,8 @@ interface Props {
 const MENTION_TAIL = /@([^\s@]*)$/;
 /** 后端 MessageIn.mentions 限制 max_length=2，前端同样封顶，避免必然 422 */
 const MAX_MENTIONS = 2;
+/** 后端 MessageIn.attachment_ids 限制 max_length=3，前端同样封顶，避免必然 422 */
+export const MAX_ATTACHMENTS = 3;
 
 export default function Composer({
   onSend,
@@ -42,6 +44,7 @@ export default function Composer({
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIds, setMentionIds] = useState<string[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [attachHint, setAttachHint] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const options =
@@ -49,6 +52,7 @@ export default function Composer({
       ? []
       : agents.filter((a) => a.name.includes(mentionQuery)).slice(0, 5);
   const atCap = mentionIds.length >= MAX_MENTIONS;
+  const attachCap = attachments.length >= MAX_ATTACHMENTS;
 
   function onChange(value: string) {
     setInput(value);
@@ -79,7 +83,7 @@ export default function Composer({
     setInput("");
     setMentionIds([]);
     setMentionQuery(null);
-    onSend(text, validIds, attachments.map((a) => a.id));
+    onSend(text, validIds, attachments.slice(0, MAX_ATTACHMENTS).map((a) => a.id));
   }
 
   return (
@@ -105,6 +109,9 @@ export default function Composer({
           ))}
         </div>
       )}
+      {attachCap && attachHint && (
+        <p className="text-xs text-muted-foreground">最多上传 {MAX_ATTACHMENTS} 张图片</p>
+      )}
       <div className="flex gap-2">
         <input
           ref={fileRef}
@@ -114,8 +121,15 @@ export default function Composer({
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) onAttach?.(file);
             e.target.value = ""; // 允许连续选择同一文件
+            if (!file) return;
+            // 已满 3 张时拒绝第 4 张并提示（与 mention 上限的交互一致）
+            if (attachCap) {
+              setAttachHint(true);
+              return;
+            }
+            setAttachHint(false);
+            onAttach?.(file);
           }}
         />
         <Button
@@ -123,7 +137,13 @@ export default function Composer({
           variant="outline"
           size="sm"
           aria-label="添加图片"
-          onClick={() => fileRef.current?.click()}
+          onClick={() => {
+            if (attachCap) {
+              setAttachHint(true);
+              return;
+            }
+            fileRef.current?.click();
+          }}
         >
           图片
         </Button>

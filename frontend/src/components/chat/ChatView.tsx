@@ -13,7 +13,7 @@ import { apiFetch } from "@/lib/api";
 import { streamRequest } from "@/lib/stream";
 import type { SSEEvent } from "@/lib/sse";
 import type { Citation } from "@/lib/citations";
-import Composer, { type PendingAttachment } from "@/components/chat/Composer";
+import Composer, { MAX_ATTACHMENTS, type PendingAttachment } from "@/components/chat/Composer";
 import MessageActions from "@/components/chat/MessageActions";
 import MessageList from "@/components/chat/MessageList";
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,18 @@ export default function ChatView() {
     },
     [],
   );
+  // ChatView 在会话间复用（无 key）：切换 sessionId 时必须丢弃上一个会话的待发附件，
+  // 否则旧会话的 attachment_id 会被发到新会话（后端 404）
+  const sessionIdRef = useRef(sessionId);
+  const prevSessionRef = useRef(sessionId);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+    if (prevSessionRef.current === sessionId) return;
+    prevSessionRef.current = sessionId;
+    attachmentsRef.current.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    attachmentsRef.current = [];
+    setAttachments([]);
+  }, [sessionId]);
   const ownsActive = Boolean(active && active.sessionId === sessionId);
   // 错误只归其产生时的会话：发送创建场景的 error.sessionId 为 null，仅无会话时显示
   const scopedError = error && error.sessionId === (sessionId ?? null) ? error.message : null;
@@ -126,6 +138,8 @@ export default function ChatView() {
   }
 
   async function attach(file: File) {
+    // 上限兜底：正常路径由 Composer 拦截并提示
+    if (attachmentsRef.current.length >= MAX_ATTACHMENTS) return;
     let target = sessionId;
     if (!target) {
       try {
@@ -148,6 +162,8 @@ export default function ChatView() {
       return;
     }
     const data = (await res.json()) as { id: string };
+    // 上传期间会话已切换：丢弃结果，避免旧会话的附件进入新会话 chips
+    if (sessionIdRef.current !== target) return;
     setAttachments((prev) => [
       ...prev,
       { id: data.id, previewUrl: URL.createObjectURL(file) },

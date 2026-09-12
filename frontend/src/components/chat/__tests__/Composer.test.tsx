@@ -87,3 +87,26 @@ test("选择图片上报 onAttach，chip 预览可移除，发送携带 attachme
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "看图{Enter}");
   expect(onSend).toHaveBeenCalledWith("看图", [], ["att1"]);
 });
+
+test("附件达到 3 张后拒绝第 4 张并提示，发送最多 3 个 id", async () => {
+  const onAttach = vi.fn();
+  const onSend = vi.fn();
+  render(
+    <Composer
+      onSend={onSend}
+      onStop={vi.fn()}
+      generating={false}
+      attachments={[1, 2, 3].map((n) => ({ id: `att${n}`, previewUrl: `blob:${n}` }))}
+      onAttach={onAttach}
+    />,
+  );
+  await userEvent.upload(
+    screen.getByLabelText("选择图片"),
+    new File(["png"], "d.png", { type: "image/png" }),
+  );
+  expect(onAttach).not.toHaveBeenCalled();
+  expect(await screen.findByText("最多上传 3 张图片")).toBeInTheDocument();
+
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "三张{Enter}");
+  expect(onSend).toHaveBeenCalledWith("三张", [], ["att1", "att2", "att3"]);
+});
