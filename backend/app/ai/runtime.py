@@ -53,11 +53,11 @@ async def _execute_tool(
         # kb_search 在 runtime 层拦截为真实检索（使用智能体绑定的 KB）
         if name == "kb_search" and agent_id is not None and db is not None:
             query = str(parsed.get("query", "")).strip()
-            top_k = parsed.get("top_k")
+            raw_top = parsed.get("top_k") or 5
             try:
-                top_k = int(top_k) if top_k is not None else None
+                top_k = min(max(int(raw_top), 1), 50)
             except (TypeError, ValueError):
-                top_k = None
+                top_k = 5
             chunks = (
                 await _retrieve_for_agent(
                     db,
@@ -76,7 +76,7 @@ async def _execute_tool(
                 from app.ai.rag.retrieval import format_context
 
                 return format_context(chunks), "ok"
-            return "未绑定知识库或检索不可用，请直接基于已有知识回答。", "ok"
+            return "未绑定知识库或未检索到相关内容，请先在智能体设置中绑定知识库。", "error"
         result = await asyncio.wait_for(item.handler(**parsed), timeout=TOOL_TIMEOUT_S)
         return str(result), "ok"
     except Exception as exc:  # noqa: BLE001 —— 工具失败转为错误结果回填，不中断生成
@@ -301,15 +301,28 @@ async def run_generation(
 
         retrieval_chunks: list = []
         embedder = _provider_embedder(provider)
-        if cfg.agent_id is not None and user_content is not None:
-            retrieval_chunks = await _retrieve_for_agent(
-                db,
-                cfg.agent_id,
-                user_content,
-                assistant_id=assistant_id,
-                session_id=session.id,
-                session_maker=session_factory,
-                embedder=embedder,
+        if cfg.agent_id is not None:
+            query_text = user_content
+            if query_text is None:
+                last_user = await db.scalar(
+                    select(Message.blocks)
+                    .where(Message.session_id == session.id, Message.role == "user")
+                    .order_by(Message.seq.desc())
+                    .limit(1)
+                )
+                query_text = _text_of(last_user or [])
+            retrieval_chunks = (
+                await _retrieve_for_agent(
+                    db,
+                    cfg.agent_id,
+                    query_text,
+                    assistant_id=assistant_id,
+                    session_id=session.id,
+                    session_maker=session_factory,
+                    embedder=embedder,
+                )
+                if query_text
+                else []
             )
 
         if retrieval_chunks:
@@ -328,6 +341,7 @@ async def run_generation(
                     "source": c.source,
                     "page": c.page,
                     "score": round(c.rrf_score, 4),
+                    "similarity": round(c.similarity, 4),
                     "snippet": c.content[:200],
                 }
                 for i, c in enumerate(retrieval_chunks, 1)

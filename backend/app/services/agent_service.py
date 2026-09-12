@@ -111,6 +111,7 @@ async def set_tools(db: AsyncSession, agent: Agent, slugs: list[str]) -> list[st
 
 async def set_kbs(db: AsyncSession, agent: Agent, user: User, bindings: list) -> list[AgentKB]:
     """替换语义：先校验全部 KB 归属，再删除旧绑定并写入新绑定。"""
+    bindings = list({b.kb_id: b for b in bindings}.values())  # 保序去重
     rows: list[AgentKB] = []
     for binding in bindings:
         kb = await db.scalar(

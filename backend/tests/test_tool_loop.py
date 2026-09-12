@@ -113,7 +113,8 @@ async def test_dict_tool_args_are_accepted(client, auth_headers, session_maker):
 
     msgs = (await client.get(f"/api/v1/sessions/{s['id']}/messages", headers=auth_headers)).json()
     result_block = next(b for b in msgs[1]["blocks"] if b["type"] == "tool_result")
-    assert result_block["status"] == "ok" and "知识库" in result_block["preview"]
+    # 该智能体未绑定 KB：kb_search 现按无绑定语义返回 error
+    assert result_block["status"] == "error" and "未绑定知识库" in result_block["preview"]
 
 
 async def test_tool_loop_capped_at_five_rounds(client, auth_headers, session_maker):

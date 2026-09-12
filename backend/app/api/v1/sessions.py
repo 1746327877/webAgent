@@ -132,12 +132,13 @@ async def regenerate(
     target: Annotated[tuple[Session, Message], Depends(_owned_regenerate_target)],
     db: Annotated[AsyncSession, Depends(get_db)],
     provider: Annotated[ModelProvider, Depends(get_provider)],
+    factory: Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)],
 ):
     session, message = target
     keep_target = message.role == "user"
     await message_service.truncate_session(db, session, message.id, keep_target=keep_target)
     return StreamingResponse(
-        run_generation(db, session, provider, user_content=None),
+        run_generation(db, session, provider, user_content=None, session_factory=factory),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

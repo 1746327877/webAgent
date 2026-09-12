@@ -17,6 +17,7 @@ class RetrievedChunk:
     page: int | None
     rrf_score: float
     channel_hits: int
+    similarity: float = 0.0
 
 
 def jieba_tokens(query: str) -> str:
@@ -43,7 +44,8 @@ async def hybrid_search(
     sql = text(
         """
         WITH semantic AS (
-            SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> CAST(:qvec AS vector)) AS r
+            SELECT id, 1 - (embedding <=> CAST(:qvec AS vector)) AS sim,
+                   ROW_NUMBER() OVER (ORDER BY embedding <=> CAST(:qvec AS vector)) AS r
             FROM chunks WHERE kb_id = ANY(:kb_ids)
             ORDER BY embedding <=> CAST(:qvec AS vector) LIMIT :chan
         ),
@@ -54,11 +56,16 @@ async def hybrid_search(
             ORDER BY ts_rank(c.tsv, q) DESC LIMIT :chan
         ),
         fused AS (
-            SELECT id, SUM(1.0 / (:rrf + r)) AS rrf_score, count(*) AS channel_hits
-            FROM (SELECT id, r FROM semantic UNION ALL SELECT id, r FROM fulltext) t
+            SELECT id, SUM(1.0 / (:rrf + r)) AS rrf_score, count(*) AS channel_hits,
+                   MAX(sim) AS similarity
+            FROM (
+                SELECT id, r, sim FROM semantic
+                UNION ALL
+                SELECT id, r, NULL AS sim FROM fulltext
+            ) t
             GROUP BY id
         )
-        SELECT c.id, c.content, c.meta, d.filename, f.rrf_score, f.channel_hits
+        SELECT c.id, c.content, c.meta, d.filename, f.rrf_score, f.channel_hits, f.similarity
         FROM fused f JOIN chunks c ON c.id = f.id JOIN documents d ON d.id = c.document_id
         ORDER BY f.rrf_score DESC, c.id LIMIT :top_k
         """
@@ -88,6 +95,7 @@ async def hybrid_search(
                 page=meta.get("page"),
                 rrf_score=float(row.rrf_score),
                 channel_hits=int(row.channel_hits),
+                similarity=float(row.similarity or 0.0),
             )
         )
     return out
