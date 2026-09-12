@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
@@ -6,9 +7,11 @@ import AgentsPage from "@/pages/AgentsPage";
 import AgentEditorPage from "@/pages/AgentEditorPage";
 import KbPage from "@/pages/KbPage";
 import KbDetailPage from "@/pages/KbDetailPage";
-import AdminDashboardPage from "@/pages/AdminDashboardPage";
 import RequireAuth from "@/components/RequireAuth";
 import ChatView from "@/components/chat/ChatView";
+
+// echarts 体积大，仪表盘按路由懒加载，避免进入首屏 entry chunk
+const AdminDashboardPage = lazy(() => import("@/pages/AdminDashboardPage"));
 
 export default function App() {
   return (
@@ -31,7 +34,16 @@ export default function App() {
           <Route path="agents/:agentId" element={<AgentEditorPage />} />
           <Route path="kb" element={<KbPage />} />
           <Route path="kb/:kbId" element={<KbDetailPage />} />
-          <Route path="admin" element={<AdminDashboardPage />} />
+          <Route
+            path="admin"
+            element={
+              <Suspense
+                fallback={<div className="flex-1 p-6 text-sm text-muted-foreground">加载中…</div>}
+              >
+                <AdminDashboardPage />
+              </Suspense>
+            }
+          />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

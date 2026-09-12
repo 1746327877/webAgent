@@ -5,8 +5,9 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, test, vi } from "vitest";
 
 const mockSetOption = vi.fn();
+const mockDispose = vi.fn();
 vi.mock("echarts", () => ({
-  init: () => ({ setOption: mockSetOption, resize: vi.fn(), dispose: vi.fn() }),
+  init: () => ({ setOption: mockSetOption, resize: vi.fn(), dispose: mockDispose }),
 }));
 
 const mockState = vi.hoisted(() => ({ overview: null as unknown, hours: 24 }));
@@ -58,6 +59,7 @@ beforeEach(() => {
   mockState.overview = overview();
   mockState.hours = 24;
   mockSetOption.mockClear();
+  mockDispose.mockClear();
 });
 
 test("渲染指标卡片与四张图表容器", async () => {
@@ -88,4 +90,60 @@ test("无数据展示空态", async () => {
   };
   renderPage();
   expect(await screen.findByText("暂无调用数据")).toBeInTheDocument();
+});
+
+type CapturedOption = {
+  series: Array<Record<string, unknown>>;
+  xAxis?: { data?: unknown[] } | Array<{ data?: unknown[] }>;
+  yAxis?: { name?: string; data?: unknown[] } | Array<{ name?: string; data?: unknown[] }>;
+};
+
+function capturedOptions(): CapturedOption[] {
+  return mockSetOption.mock.calls.map(([option]) => option as CapturedOption);
+}
+
+function findOption(
+  options: CapturedOption[],
+  predicate: (option: CapturedOption) => boolean,
+): CapturedOption {
+  const found = options.find(predicate);
+  expect(found).toBeDefined();
+  return found as CapturedOption;
+}
+
+test("图表 option 按接口数据映射（趋势双轴 / 智能体柱状 / 显存折线）", async () => {
+  renderPage();
+  await screen.findByTestId("card-llm_calls");
+  const options = capturedOptions();
+  expect(options).toHaveLength(4);
+
+  const trend = findOption(options, (o) => o.series.length === 3);
+  expect(trend.series.map((s) => s.name)).toEqual(["LLM 调用", "Prompt Token", "Completion Token"]);
+  expect(trend.series.map((s) => s.yAxisIndex)).toEqual([undefined, 1, 1]);
+  expect(trend.series.map((s) => s.data)).toEqual([[3], [100], [50]]);
+  expect(trend.yAxis).toEqual([
+    { type: "value", name: "调用" },
+    { type: "value", name: "Token" },
+  ]);
+
+  const bar = findOption(options, (o) => o.series[0]?.type === "bar");
+  expect((bar.yAxis as { data: unknown[] }).data).toEqual(["代码专家"]);
+  expect(bar.series[0].data).toEqual([150]);
+
+  const vram = findOption(
+    options,
+    (o) =>
+      o.series[0]?.type === "line" &&
+      !Array.isArray(o.yAxis) &&
+      (o.yAxis as { name?: string })?.name === "MB",
+  );
+  expect((vram.xAxis as { data: unknown[] }).data).toEqual(["09-12 10:00"]);
+  expect(vram.series[0].data).toEqual([6200]);
+});
+
+test("卸载时销毁全部 ECharts 实例", async () => {
+  const { unmount } = renderPage();
+  await screen.findByTestId("card-llm_calls");
+  unmount();
+  expect(mockDispose).toHaveBeenCalledTimes(4);
 });
