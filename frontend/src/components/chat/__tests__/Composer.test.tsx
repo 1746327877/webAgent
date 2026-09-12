@@ -6,6 +6,7 @@ import Composer from "@/components/chat/Composer";
 const AGENTS = [
   { id: "a1", name: "深度思考", emoji: "🧠" },
   { id: "a2", name: "代码专家", emoji: "💻" },
+  { id: "a3", name: "翻译助手", emoji: "🌐" },
 ];
 
 test("Enter 触发发送并清空输入", async () => {
@@ -42,4 +43,21 @@ test("无 @ 不产生 mentions", async () => {
   render(<Composer onSend={onSend} onStop={vi.fn()} generating={false} agents={AGENTS} />);
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "hello{Enter}");
   expect(onSend).toHaveBeenCalledWith("hello", []);
+});
+
+test("最多提交 2 个 mention，第三次选择被拒绝", async () => {
+  const onSend = vi.fn();
+  render(<Composer onSend={onSend} onStop={vi.fn()} generating={false} agents={AGENTS} />);
+  const input = screen.getByPlaceholderText("输入问题，Enter 发送");
+  await userEvent.type(input, "@");
+  await userEvent.click(await screen.findByText("深度思考"));
+  await userEvent.type(input, "@");
+  await userEvent.click(await screen.findByText("代码专家"));
+  await userEvent.type(input, "@");
+  expect(await screen.findByText("最多同时 @ 2 个智能体")).toBeInTheDocument();
+  await userEvent.click(screen.getByText("翻译助手"));
+  // 第三次选择被拒绝：文本与已选 id 均不变
+  expect((input as HTMLInputElement).value).not.toContain("@翻译助手");
+  await userEvent.type(input, "{Escape}{Enter}");
+  expect(onSend).toHaveBeenCalledWith("@深度思考@代码专家@", ["a1", "a2"]);
 });

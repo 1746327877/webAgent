@@ -18,6 +18,8 @@ interface Props {
 }
 
 const MENTION_TAIL = /@([^\s@]*)$/;
+/** 后端 MessageIn.mentions 限制 max_length=2，前端同样封顶，避免必然 422 */
+const MAX_MENTIONS = 2;
 
 export default function Composer({ onSend, onStop, generating, agents = [] }: Props) {
   const [input, setInput] = useState("");
@@ -29,6 +31,7 @@ export default function Composer({ onSend, onStop, generating, agents = [] }: Pr
     mentionQuery === null
       ? []
       : agents.filter((a) => a.name.includes(mentionQuery)).slice(0, 5);
+  const atCap = mentionIds.length >= MAX_MENTIONS;
 
   function onChange(value: string) {
     setInput(value);
@@ -38,6 +41,8 @@ export default function Composer({ onSend, onStop, generating, agents = [] }: Pr
   }
 
   function select(agent: MentionAgent) {
+    // 已满 2 个时拒绝第三个；已选过的仍可补全文本但不重复记 id
+    if (atCap && !mentionIds.includes(agent.id)) return;
     setInput((prev) => prev.replace(/@[^\s@]*$/, `@${agent.name}`));
     setMentionIds((prev) => (prev.includes(agent.id) ? prev : [...prev, agent.id]));
     setMentionQuery(null);
@@ -48,10 +53,12 @@ export default function Composer({ onSend, onStop, generating, agents = [] }: Pr
     const text = input.trim();
     if (!text || generating) return;
     // 选过但文本里已删掉的 @ 名字不再提交（例如用户退格删除了提及）
-    const validIds = mentionIds.filter((id) => {
-      const agent = agents.find((a) => a.id === id);
-      return agent ? text.includes(agent.name) : false;
-    });
+    const validIds = mentionIds
+      .filter((id) => {
+        const agent = agents.find((a) => a.id === id);
+        return agent ? text.includes(agent.name) : false;
+      })
+      .slice(0, MAX_MENTIONS);
     setInput("");
     setMentionIds([]);
     setMentionQuery(null);
@@ -62,29 +69,34 @@ export default function Composer({ onSend, onStop, generating, agents = [] }: Pr
     <div className="flex gap-2 border-t p-3">
       <div className="relative flex-1">
         {mentionQuery !== null && options.length > 0 && (
-          <Card
-            size="sm"
-            role="listbox"
-            aria-label="提及智能体"
-            className="absolute bottom-full left-0 z-10 mb-2 w-56 gap-0.5 p-1"
-          >
-            {options.map((a, i) => (
-              <Button
-                key={a.id}
-                type="button"
-                variant="ghost"
-                size="sm"
-                role="option"
-                aria-selected={i === activeIndex}
-                className={cn("w-full justify-start font-normal", i === activeIndex && "bg-muted")}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => select(a)}
-              >
-                <span>{a.emoji}</span>
-                <span>{a.name}</span>
-              </Button>
-            ))}
-          </Card>
+          <div className="absolute bottom-full left-0 z-10 mb-2 w-56">
+            {atCap && (
+              <p className="mb-1 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                最多同时 @ 2 个智能体
+              </p>
+            )}
+            <Card size="sm" role="listbox" aria-label="提及智能体" className="gap-0.5 p-1">
+              {options.map((a, i) => (
+                <Button
+                  key={a.id}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  role="option"
+                  aria-selected={i === activeIndex}
+                  className={cn(
+                    "w-full justify-start font-normal",
+                    i === activeIndex && "bg-muted",
+                  )}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => select(a)}
+                >
+                  <span>{a.emoji}</span>
+                  <span>{a.name}</span>
+                </Button>
+              ))}
+            </Card>
+          </div>
         )}
         <Input
           value={input}
