@@ -4,14 +4,16 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.deps import get_model_manager, get_provider
 from app.ai.model_manager import ModelManager
 from app.ai.providers.base import ModelProvider
-from app.ai.runtime import run_generation
+from app.ai.runtime import run_generation, sse
 from app.api.v1.deps import get_current_user
 from app.core.db import get_db, get_session_factory
+from app.models.agent import Agent
 from app.models.session import Message, Session
 from app.models.user import User
 from app.schemas.session import (
@@ -90,6 +92,38 @@ async def list_messages(
 
 class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=8000)
+    mentions: list[uuid.UUID] = Field(default_factory=list, max_length=2)
+
+
+async def _relay_agent(db: AsyncSession, user: User, agent_id: uuid.UUID) -> Agent | None:
+    agent = await db.scalar(
+        select(Agent).where(Agent.id == agent_id, Agent.owner_id == user.id)
+    )
+    if agent is None or agent.status == "archived":
+        return None
+    return agent
+
+
+async def _relay_stream(
+    db: AsyncSession,
+    session: Session,
+    provider: ModelProvider,
+    manager: ModelManager | None,
+    factory: async_sessionmaker[AsyncSession],
+    agent_id: uuid.UUID,
+    name: str,
+):
+    async for chunk in run_generation(
+        db,
+        session,
+        provider,
+        user_content=None,
+        session_factory=factory,
+        model_manager=manager,
+        agent_override=agent_id,
+        relay_instruction=f"你是{name}，用户 @ 了你，请针对上文补充你的专业意见。",
+    ):
+        yield chunk
 
 
 @router.post("/{sid}/messages")
@@ -103,15 +137,29 @@ async def post_message(
     manager: Annotated[ModelManager | None, Depends(get_model_manager)],
 ):
     session = await session_service.get_owned_session(db, user, sid)
-    return StreamingResponse(
-        run_generation(
+
+    async def gen():
+        async for chunk in run_generation(
             db,
             session,
             provider,
             user_content=body.content,
             session_factory=factory,
             model_manager=manager,
-        ),
+        ):
+            yield chunk
+        for mention_id in body.mentions:
+            agent = await _relay_agent(db, user, mention_id)
+            if agent is None:
+                yield sse("error", {"message": "无法接力：智能体不可用"})
+                continue
+            async for chunk in _relay_stream(
+                db, session, provider, manager, factory, agent.id, agent.name
+            ):
+                yield chunk
+
+    return StreamingResponse(
+        gen(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

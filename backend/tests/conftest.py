@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.db import get_db, get_session_factory
 from app.main import app
 from app.models import Base
+from tests.fake_provider import FakeProvider
 
 
 def _plain(dsn: str) -> str:
@@ -59,6 +60,9 @@ async def client(session_maker):
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_session_factory] = lambda: session_maker
+    # 测试不走 lifespan：预置哑 provider，使「依赖解析早于请求体校验」的
+    # 失败路径（如 mentions 超限 422）不因 app.state.provider 缺失而 500。
+    app.state.provider = FakeProvider()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

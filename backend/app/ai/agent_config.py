@@ -40,12 +40,10 @@ class EffectiveConfig:
     tool_slugs: list[str] = field(default_factory=list)
 
 
-async def resolve_effective_config(
-    db: AsyncSession, session: Session, *, user_name: str
+async def build_agent_config(
+    db: AsyncSession, agent: Agent | None, session: Session, user_name: str
 ) -> EffectiveConfig:
-    if session.agent_id is None:
-        return EffectiveConfig()
-    agent = await db.get(Agent, session.agent_id)
+    """由显式加载的智能体构建有效配置；agent 为空时回退默认配置。"""
     if agent is None:
         return EffectiveConfig()
     cfg = agent.model_config or {}
@@ -74,3 +72,12 @@ async def resolve_effective_config(
         ),
         tool_slugs=list(slugs),
     )
+
+
+async def resolve_effective_config(
+    db: AsyncSession, session: Session, *, user_name: str
+) -> EffectiveConfig:
+    if session.agent_id is None:
+        return EffectiveConfig()
+    agent = await db.get(Agent, session.agent_id)
+    return await build_agent_config(db, agent, session, user_name)

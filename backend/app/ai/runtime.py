@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.ai.agent_config import resolve_effective_config
+from app.ai.agent_config import EffectiveConfig, build_agent_config, resolve_effective_config
 from app.ai.model_manager import ModelManager
 from app.ai.providers.base import ChatRequest, ModelProvider
 from app.ai.tools.registry import tools_payload
@@ -247,10 +247,26 @@ async def run_generation(
     user_content: str | None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
     model_manager: ModelManager | None = None,
+    agent_override: uuid.UUID | None = None,
+    relay_instruction: str | None = None,
 ) -> AsyncIterator[str]:
-    """user_content=None 时仅生成助手消息（重新生成场景）。"""
+    """user_content=None 时仅生成助手消息（重新生成/接力场景）。
+
+    agent_override 指定被 @ 的智能体（接力回合），relay_instruction 注入接力指令。
+    """
     user = await db.get(User, session.user_id)
-    cfg = await resolve_effective_config(db, session, user_name=user.username if user else "")
+    user_name = user.username if user else ""
+    if agent_override is not None:
+        from app.models import Agent as AgentModel
+
+        agent = await db.get(AgentModel, agent_override)
+        cfg = (
+            await build_agent_config(db, agent, session, user_name)
+            if agent
+            else EffectiveConfig()
+        )
+    else:
+        cfg = await resolve_effective_config(db, session, user_name=user_name)
     exclude_ids: set[uuid.UUID] = set()
     if user_content is not None:
         user_msg = Message(
@@ -295,6 +311,8 @@ async def run_generation(
         messages = (
             [{"role": "system", "content": cfg.system_prompt}] if cfg.system_prompt else []
         )
+        if relay_instruction:
+            messages.append({"role": "system", "content": f"[接力指令] {relay_instruction}"})
         messages += await _load_history(
             db, session.id, exclude_ids=exclude_ids, rounds=cfg.history_rounds
         )
