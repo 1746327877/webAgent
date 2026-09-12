@@ -1,10 +1,17 @@
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+asyncpg://webagent:${PG_PWD:-webagent}@postgres:5432/webagent
+  REDIS_URL: redis://redis:6379/0
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+  JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-0123456789abcdef}
+  UPLOAD_DIR: /data/uploads
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: webagent
       POSTGRES_USER: webagent
-      POSTGRES_PASSWORD: webagent
+      POSTGRES_PASSWORD: ${PG_PWD:-webagent}
     ports:
       - "5432:5432"
     volumes:
@@ -19,6 +26,56 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment: *backend-env
+    volumes:
+      - uploads:/data/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+    command: ["sh", "-c", "alembic upgrade head && python -m scripts.seed_all && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  worker:
+    build: ./backend
+    environment: *backend-env
+    volumes:
+      - uploads:/data/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["arq", "app.workers.settings.WorkerSettings"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   pgdata:
+  uploads:
