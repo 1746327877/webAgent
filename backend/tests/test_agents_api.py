@@ -88,23 +88,41 @@ async def test_set_agent_kbs_and_kb_bindings_in_out(client, auth_headers):
         headers=auth_headers,
     )
     assert r.status_code == 200 and len(r.json()["bindings"]) == 1
+    bound = r.json()["bindings"][0]
+    assert bound["kb_id"] == kb["id"]
+    assert bound["name"] == "KB1"
+    assert bound["top_k"] == 3
+    assert bound["score_threshold"] == 0.3
     detail = (await client.get(f"/api/v1/agents/{aid}", headers=auth_headers)).json()
     assert detail["kb_bindings"][0]["kb_id"] == kb["id"]
+    assert detail["kb_bindings"][0]["name"] == "KB1"
     assert detail["kb_bindings"][0]["top_k"] == 3
+    assert detail["kb_bindings"][0]["score_threshold"] == 0.3
+
+    # 自定义阈值透传
+    r1 = await client.put(
+        f"/api/v1/agents/{aid}/kbs",
+        json={"bindings": [{"kb_id": kb["id"], "top_k": 3, "score_threshold": 0.5}]},
+        headers=auth_headers,
+    )
+    assert r1.json()["bindings"][0]["score_threshold"] == 0.5
+
     # 替换语义
     r2 = await client.put(f"/api/v1/agents/{aid}/kbs", json={"bindings": []}, headers=auth_headers)
     assert r2.json()["bindings"] == []
 
-    # 他人 KB → 404
+    # 他人 KB → 404：bob 拥有自己的 agent，但 kb 属于 alice，命中 KB 归属校验
     from tests.test_sessions_api import make_user
 
     other = await make_user(client, "bob")
+    bob_aid = (await client.post("/api/v1/agents", json=AGENT, headers=other)).json()["id"]
     r3 = await client.put(
-        f"/api/v1/agents/{aid}/kbs",
+        f"/api/v1/agents/{bob_aid}/kbs",
         json={"bindings": [{"kb_id": kb["id"]}]},
         headers=other,
     )
     assert r3.status_code == 404
+    assert r3.json()["detail"] == "知识库不存在"
 
 
 async def test_models_endpoint(client, auth_headers):

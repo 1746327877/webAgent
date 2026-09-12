@@ -14,15 +14,20 @@ export interface KbBindingsProps {
 interface DraftBinding {
   kb_id: string;
   top_k: number;
+  score_threshold: number;
 }
 
 function toDraft(bindings: KbBinding[]): DraftBinding[] {
-  return bindings.map((b) => ({ kb_id: b.kb_id, top_k: b.top_k }));
+  return bindings.map((b) => ({
+    kb_id: b.kb_id,
+    top_k: b.top_k,
+    score_threshold: b.score_threshold,
+  }));
 }
 
-function sortKey(bindings: { kb_id: string; top_k: number }[]): string {
+function sortKey(bindings: DraftBinding[]): string {
   return [...bindings]
-    .map((b) => `${b.kb_id}:${b.top_k}`)
+    .map((b) => `${b.kb_id}:${b.top_k}:${b.score_threshold}`)
     .sort()
     .join(",");
 }
@@ -44,7 +49,7 @@ export default function KbBindings({
   function toggle(kbId: string, checked: boolean) {
     setDraft((prev) =>
       checked
-        ? [...prev.filter((b) => b.kb_id !== kbId), { kb_id: kbId, top_k: 5 }]
+        ? [...prev.filter((b) => b.kb_id !== kbId), { kb_id: kbId, top_k: 5, score_threshold: 0.3 }]
         : prev.filter((b) => b.kb_id !== kbId),
     );
   }
