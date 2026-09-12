@@ -45,9 +45,9 @@ async def clean_tables(engine):
     async with engine.begin() as c:
         await c.execute(
             text(
-                "TRUNCATE chunks, documents, knowledge_bases, agent_kbs, spans,"
-                " attachments, messages, sessions, refresh_tokens, users, agents,"
-                " agent_versions, agent_tools, tools, model_events CASCADE"
+                "TRUNCATE chunks, documents, knowledge_bases, agent_kbs, spans, http_stats,"
+                " alert_events, alert_rules, attachments, messages, sessions, refresh_tokens,"
+                " users, agents, agent_versions, agent_tools, tools, model_events CASCADE"
             )
         )
 

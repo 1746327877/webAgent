@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,6 +10,11 @@ from app.models.base import Base
 
 class Span(Base):
     __tablename__ = "spans"
+    __table_args__ = (
+        Index("idx_spans_agg", "started_at", "type"),
+        Index("idx_spans_agent", "agent_id", "started_at"),
+        Index("idx_spans_session", "session_id", "started_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     trace_id: Mapped[uuid.UUID] = mapped_column(index=True)
