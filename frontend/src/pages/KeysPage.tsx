@@ -5,17 +5,34 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 export default function KeysPage() {
-  const { data: keys = [], isLoading, error } = useApiKeys();
+  const { data: keys = [], isLoading, error: loadError } = useApiKeys();
   const createKey = useCreateApiKey();
   const revokeKey = useRevokeApiKey();
   const [name, setName] = useState("");
   const [created, setCreated] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function onCreate() {
-    if (!name.trim()) return;
-    const key = await createKey.mutateAsync(name.trim());
-    setCreated(key.key);
-    setName("");
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setError(null);
+    try {
+      const key = await createKey.mutateAsync(trimmed);
+      setCreated(key.key);
+      setName("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建失败");
+    }
+  }
+
+  async function onRevoke(id: string) {
+    if (!window.confirm("吊销该密钥？")) return;
+    setError(null);
+    try {
+      await revokeKey.mutateAsync(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "吊销失败");
+    }
   }
 
   return (
@@ -58,7 +75,8 @@ export default function KeysPage() {
           </Card>
         )}
         {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
-        {error && <p className="text-sm text-red-500">{error.message}</p>}
+        {loadError && <p className="text-sm text-red-500">{loadError.message}</p>}
+        {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="space-y-2">
           {keys.map((key) => (
             <div key={key.id} className="flex items-center gap-2 rounded border p-2 text-sm">
@@ -71,9 +89,8 @@ export default function KeysPage() {
                   variant="ghost"
                   size="sm"
                   className="ml-auto text-red-500"
-                  onClick={() => {
-                    if (window.confirm("吊销该密钥？")) revokeKey.mutate(key.id);
-                  }}
+                  disabled={revokeKey.isPending}
+                  onClick={() => onRevoke(key.id)}
                 >
                   吊销
                 </Button>
