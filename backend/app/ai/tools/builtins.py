@@ -19,9 +19,9 @@ async def time_now() -> str:
 @tool(
     "kb_search",
     "知识库检索",
-    "在智能体绑定的知识库中检索相关文档片段（知识库将在 M3 提供）",
+    "在智能体绑定的知识库中检索相关文档片段",
     category="knowledge",
     is_system=True,
 )
 async def kb_search(query: str, top_k: int = 5) -> str:
-    return "知识库功能尚未启用（将在 M3 提供），请直接基于已有知识回答。"
+    return "未绑定知识库或检索不可用，请直接基于已有知识回答。"
