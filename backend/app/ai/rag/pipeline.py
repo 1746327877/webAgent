@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -93,6 +94,13 @@ async def run_ingest(
             doc.chunk_count = len(pieces)
             doc.meta = {**meta_pages, "pages": len(pages)}
             await _set_status(db, doc, "ready")
+        except asyncio.CancelledError:
+            # arq 超时/取消抛 BaseException，逃逸会让文档永久停在非终态（前端无限轮询）
+            await db.rollback()
+            doc = await db.get(Document, uuid.UUID(document_id))
+            if doc is not None and doc.status not in ("ready", "failed"):
+                await _set_status(db, doc, "failed", error="处理超时或被取消")
+            raise
         except Exception as exc:  # noqa: BLE001
             await db.rollback()
             doc = await db.get(Document, uuid.UUID(document_id))

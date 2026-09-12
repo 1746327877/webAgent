@@ -1,6 +1,8 @@
+import asyncio
 import uuid
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 from app.ai.rag.splitter import split_text
@@ -123,3 +125,24 @@ async def test_run_ingest_failure_sets_failed(session_maker, tmp_path):
     async with session_maker() as db:
         doc = await db.get(Document, uuid.UUID(doc_id))
         assert doc.status == "failed" and "embed boom" in (doc.error or "")
+
+
+async def test_run_ingest_cancelled_marks_failed_and_reraises(session_maker, tmp_path):
+    from app.ai.rag.pipeline import run_ingest
+
+    doc_id, _ = await _seed_doc(session_maker, tmp_path)
+
+    async def cancelling_embedder(texts):
+        raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_ingest(
+            doc_id,
+            embedder=cancelling_embedder,
+            upload_dir=str(tmp_path),
+            session_factory=session_maker,
+        )
+    async with session_maker() as db:
+        doc = await db.get(Document, uuid.UUID(doc_id))
+        assert doc.status == "failed"
+        assert doc.error == "处理超时或被取消"

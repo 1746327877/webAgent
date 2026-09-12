@@ -1,4 +1,3 @@
-import asyncio
 import io
 import uuid
 
@@ -22,7 +21,10 @@ async def test_kb_crud_and_ownership(client, auth_headers):
 
 async def test_upload_enqueues_and_lists(client, auth_headers, session_maker, monkeypatch, tmp_path):
     calls: list[str] = []
-    monkeypatch.setattr(kbs_api, "enqueue_ingest", lambda doc_id, **_: calls.append(str(doc_id)))
+    async def fake_enqueue(doc_id, **_):
+        calls.append(str(doc_id))
+
+    monkeypatch.setattr(kbs_api, "enqueue_ingest", fake_enqueue)
     monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
 
     kid = (await client.post("/api/v1/kbs", json={"name": "K"}, headers=auth_headers)).json()["id"]
@@ -56,7 +58,10 @@ async def test_upload_rejects_oversized_file(client, auth_headers, monkeypatch, 
 async def test_delete_document_and_retry(client, auth_headers, monkeypatch, tmp_path, session_maker):
     monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
     calls: list[str] = []
-    monkeypatch.setattr(kbs_api, "enqueue_ingest", lambda doc_id, **_: calls.append(str(doc_id)))
+    async def fake_enqueue(doc_id, **_):
+        calls.append(str(doc_id))
+
+    monkeypatch.setattr(kbs_api, "enqueue_ingest", fake_enqueue)
     kid = (await client.post("/api/v1/kbs", json={"name": "K"}, headers=auth_headers)).json()["id"]
     files = {"file": ("a.md", io.BytesIO(b"x"), "text/markdown")}
     doc = (await client.post(f"/api/v1/kbs/{kid}/documents", files=files, headers=auth_headers)).json()
@@ -85,27 +90,55 @@ async def test_worker_settings_shape():
 
     assert WorkerSettings.redis_settings is not None
     assert len(WorkerSettings.functions) >= 1
+    assert WorkerSettings.job_timeout == 1800
 
 
 async def test_enqueue_ingest_uses_dedup_job_id(monkeypatch):
-    import arq
-
     calls: list[tuple] = []
+    closed = False
 
     class FakePool:
         async def enqueue_job(self, name, doc_id, **kwargs):
             calls.append((name, doc_id, kwargs))
 
+        async def aclose(self):
+            nonlocal closed
+            closed = True
+
     async def fake_create_pool(redis_settings):
         return FakePool()
 
-    monkeypatch.setattr(arq, "create_pool", fake_create_pool)
+    monkeypatch.setattr(kbs_api, "create_pool", fake_create_pool)
     doc_id = uuid.uuid4()
-    kbs_api.enqueue_ingest(doc_id)
-    await asyncio.sleep(0.05)
-    kbs_api.enqueue_ingest(doc_id, dedupe=False)
-    await asyncio.sleep(0.05)
+    await kbs_api.enqueue_ingest(doc_id)
+    await kbs_api.enqueue_ingest(doc_id, dedupe=False)
     assert calls == [
         ("ingest_job", str(doc_id), {"_job_id": f"ingest:{doc_id}"}),
         ("ingest_job", str(doc_id), {}),
     ]
+    assert closed is True
+
+
+async def test_upload_enqueue_failure_marks_document_failed(
+    client, auth_headers, session_maker, monkeypatch, tmp_path
+):
+    from sqlalchemy import select
+
+    from app.models import Document
+
+    monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
+
+    async def broken_create_pool(redis_settings):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(kbs_api, "create_pool", broken_create_pool)
+
+    kid = (await client.post("/api/v1/kbs", json={"name": "K"}, headers=auth_headers)).json()["id"]
+    files = {"file": ("a.md", io.BytesIO(b"x"), "text/markdown")}
+    r = await client.post(f"/api/v1/kbs/{kid}/documents", files=files, headers=auth_headers)
+    assert r.status_code == 503
+
+    async with session_maker() as db:
+        doc = (await db.scalars(select(Document))).one()
+        assert doc.status == "failed"
+        assert doc.error == "任务排队失败，请重试"
