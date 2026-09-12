@@ -47,18 +47,7 @@ async def run_ingest(
     session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
     provider: EmbeddingProvider | None = None
-    if embedder is not None:
-        embed = embedder
-    else:
-        from app.ai.providers.ollama import OllamaProvider
-
-        # 单次 ingest 复用一个 provider：各批次嵌入共享连接池，结束统一关闭
-        provider = (
-            provider_factory()
-            if provider_factory is not None
-            else OllamaProvider(settings.ollama_base_url)
-        )
-        embed = _provider_embedder(provider)
+    embed: Embedder | None = embedder
 
     base = Path(upload_dir or settings.upload_dir)
     if session_factory is None:
@@ -71,6 +60,16 @@ async def run_ingest(
             if doc is None:
                 return
             try:
+                if embed is None:
+                    from app.ai.providers.ollama import OllamaProvider
+
+                    # 单次 ingest 复用一个 provider：各批次嵌入共享连接池，结束统一关闭
+                    provider = (
+                        provider_factory()
+                        if provider_factory is not None
+                        else OllamaProvider(settings.ollama_base_url)
+                    )
+                    embed = _provider_embedder(provider)
                 await _set_status(db, doc, "parsing")
                 stored = (doc.meta or {}).get("stored_name")
                 # 与 _remove_stored_file 对称：落盘名恒为 "{uuid}.{ext}"，含路径分隔符一律拒绝

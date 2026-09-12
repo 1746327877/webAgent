@@ -150,6 +150,7 @@ async def test_run_ingest_cancelled_marks_failed_and_reraises(session_maker, tmp
 
 async def test_run_ingest_reuses_single_provider(session_maker, tmp_path):
     from app.ai.rag.pipeline import run_ingest
+    from app.core.config import settings
 
     doc_id, _ = await _seed_doc(session_maker, tmp_path, content="段落一。\n\n段落二。\n\n段落三。")
     created: list[object] = []
@@ -158,8 +159,10 @@ async def test_run_ingest_reuses_single_provider(session_maker, tmp_path):
     class FakeProvider:
         def __init__(self):
             created.append(self)
+            self.embed_calls: list[tuple[list[str], str]] = []
 
         async def embed(self, texts, model):
+            self.embed_calls.append((texts, model))
             return [[0.0] * 1024 for _ in texts]
 
         async def aclose(self):
@@ -168,5 +171,12 @@ async def test_run_ingest_reuses_single_provider(session_maker, tmp_path):
     def factory() -> FakeProvider:
         return FakeProvider()
 
-    await run_ingest(doc_id, provider_factory=factory, upload_dir=str(tmp_path))
+    await run_ingest(
+        doc_id,
+        provider_factory=factory,
+        upload_dir=str(tmp_path),
+        session_factory=session_maker,
+    )
     assert len(created) == 1 and closed == [1]
+    assert created[0].embed_calls
+    assert created[0].embed_calls[0][1] == settings.embedding_model
