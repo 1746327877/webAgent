@@ -27,6 +27,7 @@ async def engine():
 
     eng = create_async_engine(settings.test_database_url, poolclass=NullPool)
     async with eng.begin() as c:
+        await c.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await c.run_sync(Base.metadata.create_all)
     yield eng
     await eng.dispose()
@@ -43,7 +44,8 @@ async def clean_tables(engine):
     async with engine.begin() as c:
         await c.execute(
             text(
-                "TRUNCATE attachments, messages, sessions, refresh_tokens, users, agents,"
+                "TRUNCATE chunks, documents, knowledge_bases, agent_kbs, spans,"
+                " attachments, messages, sessions, refresh_tokens, users, agents,"
                 " agent_versions, agent_tools, tools CASCADE"
             )
         )
