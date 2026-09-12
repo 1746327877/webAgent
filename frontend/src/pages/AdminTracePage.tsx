@@ -163,12 +163,18 @@ export default function AdminTracePage() {
   const { data: trace, isLoading: traceLoading, error: traceError } = useTrace(selectedMessageId);
   const [type, setType] = useState("");
   const [status, setStatus] = useState("");
-  const [selectedSpan, setSelectedSpan] = useState<SpanItem | null>(null);
+  const [drawer, setDrawer] = useState<{ viewKey: string; span: SpanItem } | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
-  // 列表与 CSV 导出共用同一份筛选参数
+  // 列表与 CSV 导出共用同一份筛选参数；列表额外请求后端单页上限，
+  // 导出则由后端流式输出全部命中数据
   const filters = { session_id: sessionId, type: type || undefined, status: status || undefined };
-  const { data: logs } = useSpanLogs(filters);
+  const listFilters = { ...filters, limit: 200 };
+  const { data: logs } = useSpanLogs(listFilters);
+
+  // 抽屉绑定当前会话+消息：切换会话/消息后旧 span 不再展示，无需额外副作用清理
+  const viewKey = `${sessionId ?? ""}:${selectedMessageId ?? ""}`;
+  const selectedSpan = drawer?.viewKey === viewKey ? drawer.span : null;
 
   async function onExport() {
     setExportError(null);
@@ -224,7 +230,7 @@ export default function AdminTracePage() {
                 <span className="text-sm font-medium">Waterfall</span>
                 <span className="text-xs text-muted-foreground">{trace.spans.length} 个 span</span>
               </div>
-              <Waterfall spans={trace.spans} onSelect={setSelectedSpan} />
+              <Waterfall spans={trace.spans} onSelect={(span) => setDrawer({ viewKey, span })} />
             </section>
 
             <section className="p-3">
@@ -261,6 +267,11 @@ export default function AdminTracePage() {
                 </Button>
                 {exportError && <span className="text-xs text-red-500">{exportError}</span>}
               </div>
+              {logs && logs.total > logs.items.length && (
+                <p className="mb-2 text-xs text-muted-foreground">
+                  {`共 ${logs.total} 条，显示前 ${logs.items.length} 条`}
+                </p>
+              )}
               <table className="w-full text-left text-xs">
                 <thead className="text-muted-foreground">
                   <tr className="border-b">
@@ -289,7 +300,7 @@ export default function AdminTracePage() {
                   ))}
                 </tbody>
               </table>
-              {logs && logs.items.length === 0 && (
+              {logs && logs.total === 0 && (
                 <p className="py-6 text-center text-xs text-muted-foreground">暂无日志</p>
               )}
             </section>
@@ -297,7 +308,7 @@ export default function AdminTracePage() {
         )}
       </div>
 
-      {selectedSpan && <SpanDrawer span={selectedSpan} onClose={() => setSelectedSpan(null)} />}
+      {selectedSpan && <SpanDrawer span={selectedSpan} onClose={() => setDrawer(null)} />}
     </div>
   );
 }

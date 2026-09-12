@@ -95,3 +95,17 @@ test("状态筛选透传查询并导出 CSV", async () => {
   await userEvent.click(screen.getByRole("button", { name: "导出 CSV" }));
   await waitFor(() => expect(mockState.exported).toMatchObject({ status: "error" }));
 });
+
+test("日志总数超过单页时展示总数与显示范围，并按上限取数", async () => {
+  mockState.logs = { total: 120, items: [TOOL_SPAN] };
+  renderPage();
+  expect(await screen.findByText("共 120 条，显示前 1 条")).toBeInTheDocument();
+  expect(mockState.logFilters).toMatchObject({ session_id: "s1", limit: 200 });
+});
+
+test("日志为空时展示空态且不显示范围提示", async () => {
+  mockState.logs = { total: 0, items: [] };
+  renderPage();
+  expect(await screen.findByText("暂无日志")).toBeInTheDocument();
+  expect(screen.queryByText(/显示前/)).not.toBeInTheDocument();
+});

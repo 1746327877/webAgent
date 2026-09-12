@@ -174,14 +174,15 @@ export async function downloadSpansCsv(filters: Record<string, string | undefine
   if (!res.ok) throw new Error(`导出失败（HTTP ${res.status}）`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "spans.csv";
+  document.body.appendChild(link);
   try {
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "spans.csv";
-    document.body.appendChild(link);
     link.click();
-    link.remove();
   } finally {
-    URL.revokeObjectURL(url);
+    link.remove();
+    // 延迟回收：Firefox/Safari 在 click 同步栈内 revoke 可能取消 blob 下载
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 }
