@@ -143,6 +143,14 @@ export default function SessionSidebar() {
         >
           🤖 智能体
         </NavLink>
+        <NavLink
+          to="/kb"
+          className={({ isActive }) =>
+            `block rounded px-2 py-1.5 text-sm ${isActive ? "bg-accent" : "hover:bg-accent/50"}`
+          }
+        >
+          📚 知识库
+        </NavLink>
         <Button variant="ghost" size="sm" className="w-full" onClick={() => setShowArchived((v) => !v)}>
           {showArchived ? "返回" : "查看归档"}
         </Button>

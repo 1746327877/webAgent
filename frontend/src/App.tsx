@@ -4,6 +4,8 @@ import RegisterPage from "@/pages/RegisterPage";
 import ChatPage from "@/pages/ChatPage";
 import AgentsPage from "@/pages/AgentsPage";
 import AgentEditorPage from "@/pages/AgentEditorPage";
+import KbPage from "@/pages/KbPage";
+import KbDetailPage from "@/pages/KbDetailPage";
 import RequireAuth from "@/components/RequireAuth";
 import ChatView from "@/components/chat/ChatView";
 
@@ -26,6 +28,8 @@ export default function App() {
           <Route path="agents" element={<AgentsPage />} />
           <Route path="agents/new" element={<AgentEditorPage />} />
           <Route path="agents/:agentId" element={<AgentEditorPage />} />
+          <Route path="kb" element={<KbPage />} />
+          <Route path="kb/:kbId" element={<KbDetailPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

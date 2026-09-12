@@ -30,7 +30,9 @@ async function doFetch(path: string, init: RequestInit = {}): Promise<Response> 
   const token = useAuthStore.getState().accessToken;
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   return fetch(path, { ...init, headers, credentials: "include" });
 }
 
