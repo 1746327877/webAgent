@@ -19,16 +19,23 @@ ALLOWED = {"pdf", "md", "txt", "docx"}
 MAX_BYTES = 20 * 1024 * 1024
 
 
-def enqueue_ingest(document_id) -> None:
-    """生产环境入 ARQ；测试 monkeypatch。"""
+def enqueue_ingest(document_id, *, dedupe: bool = True) -> None:
+    """生产环境入 ARQ；测试 monkeypatch。
+
+    dedupe=True 用固定 job_id 防止并发重复入队；重试必须 dedupe=False——
+    arq 在 result key 保留期（默认 3600s）内会丢弃同名 job_id 的入队。
+    """
     from arq import create_pool
     from arq.connections import RedisSettings
 
     async def _run():
         pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-        await pool.enqueue_job(
-            "ingest_job", str(document_id), _job_id=f"ingest:{document_id}"
-        )
+        if dedupe:
+            await pool.enqueue_job(
+                "ingest_job", str(document_id), _job_id=f"ingest:{document_id}"
+            )
+        else:
+            await pool.enqueue_job("ingest_job", str(document_id))
 
     asyncio.get_running_loop().create_task(_run())
 
@@ -153,7 +160,7 @@ async def retry_document(
     if doc.kb_id != kb.id:
         raise HTTPException(status_code=404, detail="文档不存在")
     doc = await kb_service.reset_document(db, doc)
-    enqueue_ingest(doc.id)
+    enqueue_ingest(doc.id, dedupe=False)
     return doc
 
 

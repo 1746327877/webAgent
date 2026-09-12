@@ -22,7 +22,7 @@ async def test_kb_crud_and_ownership(client, auth_headers):
 
 async def test_upload_enqueues_and_lists(client, auth_headers, session_maker, monkeypatch, tmp_path):
     calls: list[str] = []
-    monkeypatch.setattr(kbs_api, "enqueue_ingest", lambda doc_id: calls.append(str(doc_id)))
+    monkeypatch.setattr(kbs_api, "enqueue_ingest", lambda doc_id, **_: calls.append(str(doc_id)))
     monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
 
     kid = (await client.post("/api/v1/kbs", json={"name": "K"}, headers=auth_headers)).json()["id"]
@@ -56,7 +56,7 @@ async def test_upload_rejects_oversized_file(client, auth_headers, monkeypatch, 
 async def test_delete_document_and_retry(client, auth_headers, monkeypatch, tmp_path, session_maker):
     monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
     calls: list[str] = []
-    monkeypatch.setattr(kbs_api, "enqueue_ingest", lambda doc_id: calls.append(str(doc_id)))
+    monkeypatch.setattr(kbs_api, "enqueue_ingest", lambda doc_id, **_: calls.append(str(doc_id)))
     kid = (await client.post("/api/v1/kbs", json={"name": "K"}, headers=auth_headers)).json()["id"]
     files = {"file": ("a.md", io.BytesIO(b"x"), "text/markdown")}
     doc = (await client.post(f"/api/v1/kbs/{kid}/documents", files=files, headers=auth_headers)).json()
@@ -103,4 +103,9 @@ async def test_enqueue_ingest_uses_dedup_job_id(monkeypatch):
     doc_id = uuid.uuid4()
     kbs_api.enqueue_ingest(doc_id)
     await asyncio.sleep(0.05)
-    assert calls == [("ingest_job", str(doc_id), {"_job_id": f"ingest:{doc_id}"})]
+    kbs_api.enqueue_ingest(doc_id, dedupe=False)
+    await asyncio.sleep(0.05)
+    assert calls == [
+        ("ingest_job", str(doc_id), {"_job_id": f"ingest:{doc_id}"}),
+        ("ingest_job", str(doc_id), {}),
+    ]
