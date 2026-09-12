@@ -63,6 +63,7 @@ test("渲染会话标题", () => {
     </MemoryRouter>,
   );
   expect(screen.getByText("Java 学习")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "📊 可观测性" })).toBeInTheDocument();
 });
 
 test("删除当前会话后跳回 /", () => {
