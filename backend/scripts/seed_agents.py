@@ -40,6 +40,17 @@ PRESETS = [
         "tools": ["time_now"],
         "model": "qwen2.5:7b-instruct-q4_K_M",
     },
+    {
+        "name": "深度思考",
+        "emoji": "🧠",
+        "description": "用 R1 蒸馏模型做深度推理",
+        "tags": ["推理"],
+        "system_prompt": "你是严谨的推理专家，回答前先在 <think> 中完整推理，再给出结论。今天是 {{today}}。",
+        "welcome_msg": "把需要深入思考的问题交给我。",
+        "examples": ["帮我分析这个逻辑题", "解释一下 CAP 定理的取舍"],
+        "tools": [],
+        "model": "deepseek-r1:latest",
+    },
 ]
 
 
