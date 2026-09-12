@@ -53,6 +53,54 @@ async def test_non_stream_completion_and_span(client, auth_headers, session_make
     assert span is not None and span.model == "m-api" and span.prompt_tokens == 7
 
 
+async def test_non_stream_provider_failure_returns_shaped_502(client, auth_headers, session_maker):
+    agent_id, key = await _setup(client, auth_headers)
+    app.dependency_overrides[get_provider] = lambda: FakeProvider(raise_after=0)
+    r = await client.post(
+        "/v1/chat/completions",
+        json={"model": f"agent:{agent_id}", "messages": MESSAGES},
+        headers=_auth(key),
+    )
+    assert r.status_code == 502
+    error = r.json()["error"]
+    assert error["type"] == "server_error"
+    assert error["message"] == "生成失败"
+    assert error["param"] is None and error["code"] is None
+
+    from app.models import Span
+
+    async with session_maker() as db:
+        span = (await db.scalars(select(Span).where(Span.type == "llm"))).first()
+    assert span is not None and span.status == "error" and span.error == "boom"
+
+
+async def test_api_key_touch_failure_does_not_fail_completion(client, auth_headers, monkeypatch):
+    """鉴权时 last_used_at 触达失败不得把已通过鉴权的补全请求打成 500。"""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    agent_id, key = await _setup(client, auth_headers)
+    app.dependency_overrides[get_provider] = lambda: FakeProvider([("token", {"delta": "ok"})])
+
+    real_commit = AsyncSession.commit
+    state = {"failed": False}
+
+    async def flaky_commit(self):
+        if not state["failed"]:  # 第一次 commit 即鉴权触达；之后放行 span 落库
+            state["failed"] = True
+            raise RuntimeError("last_used_at 写入失败")
+        await real_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
+    r = await client.post(
+        "/v1/chat/completions",
+        json={"model": f"agent:{agent_id}", "messages": MESSAGES},
+        headers=_auth(key),
+    )
+    assert state["failed"] is True
+    assert r.status_code == 200
+    assert r.json()["choices"][0]["message"]["content"] == "ok"
+
+
 async def test_stream_completion_emits_openai_chunks(client, auth_headers):
     agent_id, key = await _setup(client, auth_headers)
     app.dependency_overrides[get_provider] = lambda: FakeProvider(

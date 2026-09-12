@@ -46,3 +46,38 @@ async def test_resolve_key_user_updates_last_used_and_revoked_fails(client, auth
     await client.delete(f"/api/v1/keys/{created['id']}", headers=auth_headers)
     async with session_maker() as db:
         assert await api_key_service.resolve_key_user(db, created["key"]) is None
+
+
+async def test_resolve_key_user_survives_last_used_touch_failure(
+    client, auth_headers, session_maker, monkeypatch
+):
+    """last_used_at 写失败只是丢一次触达记录：鉴权照常通过，异常不得上抛。"""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models import ApiKey
+    from app.services import api_key_service
+
+    created = (await client.post("/api/v1/keys", json={"name": "k"}, headers=auth_headers)).json()
+    me = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()
+
+    real_commit = AsyncSession.commit
+    state = {"failed": False}
+
+    async def flaky_commit(self):
+        if not state["failed"]:  # 第一次 commit 即鉴权时的 last_used_at 触达
+            state["failed"] = True
+            raise RuntimeError("last_used_at 写入失败")
+        await real_commit(self)
+
+    monkeypatch.setattr(AsyncSession, "commit", flaky_commit)
+
+    async with session_maker() as db:
+        user = await api_key_service.resolve_key_user(db, created["key"])
+        # 失败后仍返回通过校验的用户，且属性可安全读取（refresh 已执行）
+        assert user is not None and str(user.id) == me["id"]
+        assert user.username == "alice"
+    assert state["failed"] is True
+
+    async with session_maker() as db:
+        row = await db.get(ApiKey, uuid.UUID(created["id"]))
+        assert row is not None and row.last_used_at is None  # 触达确实被回滚而非落库

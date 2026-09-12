@@ -48,7 +48,7 @@ async def revoke_key(db: AsyncSession, user: User, key_id: uuid.UUID) -> bool:
 
 
 async def resolve_key_user(db: AsyncSession, plaintext: str) -> User | None:
-    """API Key 鉴权：查哈希 + 更新 last_used_at（best-effort 语义到此为止）。"""
+    """API Key 鉴权：查哈希 + 更新 last_used_at（触达为 best-effort，失败不影响鉴权）。"""
     if not plaintext.startswith(KEY_LITERAL_PREFIX):
         return None
     key = await db.scalar(
@@ -60,5 +60,13 @@ async def resolve_key_user(db: AsyncSession, plaintext: str) -> User | None:
     if user is None or user.status != "active":
         return None
     key.last_used_at = datetime.now(UTC)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:  # noqa: BLE001 —— last_used_at 写入失败不得把已通过校验的鉴权打成 500
+        try:
+            await db.rollback()
+            # rollback 会把会话内全部实例标记过期；刷新后下游才能安全读取 user 属性
+            await db.refresh(user)
+        except Exception:  # noqa: BLE001, S110 —— 回滚/刷新失败同样吞掉，鉴权结果照常返回
+            pass
     return user

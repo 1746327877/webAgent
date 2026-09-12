@@ -35,14 +35,19 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int = 2048
 
 
-def _error(status: int, message: str, error_type: str = "invalid_request_error") -> JSONResponse:
+def _error(
+    status: int,
+    message: str,
+    error_type: str = "invalid_request_error",
+    param: str | None = "model",
+) -> JSONResponse:
     return JSONResponse(
         status_code=status,
         content={
             "error": {
                 "message": message,
                 "type": error_type,
-                "param": "model",
+                "param": param,
                 "code": None,
             }
         },
@@ -81,6 +86,10 @@ async def chat_completions(
             media_type="text/event-stream",
             headers={"X-Accel-Buffering": "no"},
         )
-    return await openai_service.complete(
-        db, user, provider, agent=agent, req=req, response_model=body.model
-    )
+    # 非流式：生成失败转 OpenAI 形状的 502（流式路径已在生成器内以错误块收尾）
+    try:
+        return await openai_service.complete(
+            db, user, provider, agent=agent, req=req, response_model=body.model
+        )
+    except Exception:  # noqa: BLE001 —— provider/生成失败不得裸抛 500
+        return _error(502, "生成失败", "server_error", param=None)
