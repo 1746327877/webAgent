@@ -12,6 +12,7 @@ def _hard_split(block: str, size: int, overlap: int) -> list[str]:
 
 
 def split_text(text: str, size: int = 512, overlap: int = 64) -> list[str]:
+    text = text.replace("\r\n", "\n")
     text = text.strip()
     if not text:
         return []

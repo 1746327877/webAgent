@@ -26,7 +26,9 @@ def enqueue_ingest(document_id) -> None:
 
     async def _run():
         pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-        await pool.enqueue_job("ingest_job", str(document_id))
+        await pool.enqueue_job(
+            "ingest_job", str(document_id), _job_id=f"ingest:{document_id}"
+        )
 
     asyncio.get_running_loop().create_task(_run())
 

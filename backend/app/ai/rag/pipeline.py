@@ -50,8 +50,11 @@ async def run_ingest(
         try:
             await _set_status(db, doc, "parsing")
             stored = (doc.meta or {}).get("stored_name")
-            path = base / stored if stored else None
-            if path is None or not path.exists():
+            # 与 _remove_stored_file 对称：落盘名恒为 "{uuid}.{ext}"，含路径分隔符一律拒绝
+            if not stored or Path(stored).name != stored:
+                raise FileNotFoundError("上传文件丢失")
+            path = base / stored
+            if not path.exists():
                 raise FileNotFoundError("上传文件丢失")
             from app.ai.rag.parsers import extract_text
             from app.ai.rag.splitter import split_text

@@ -12,9 +12,16 @@
 ## 功能（M2 智能体）
 
 - 智能体管理：系统提示词（支持 `{{today}}` 变量）/参数/工具绑定/版本发布与回滚
-- 工具调用：内置 `time_now`（当前时间）；`kb_search` 将在 M3 提供
+- 工具调用：内置 `time_now`（当前时间）；`kb_search`（知识库混合检索，见 M3）
 - 选择智能体对话：新建会话时选择智能体，按绑定工具自动进入工具循环
 - 欢迎语与示例问题：智能体会话展示欢迎语与可点击的示例问题
+
+## 功能（M3 知识库）
+
+- 知识库：上传（pdf/md/txt/docx）/解析/切片/嵌入流水线与文档状态徽章、失败重试
+- 混合检索：pgvector 向量检索 + jieba 全文检索（FTS）+ RRF 融合
+- 回答引用：引用角标、回答依据与来源抽屉
+- 智能体知识库绑定：为智能体绑定知识库并设置 top_k
 
 ## 快速开始
 
@@ -31,9 +38,10 @@ cd backend
 uv run python -m scripts.seed                 # 创建 demo / Demo123456
 uv run python -m scripts.seed_agents          # 创建 3 个预置智能体（通用助手 / 代码专家 / 时间管家）
 uv run python -m scripts.seed_demo_sessions   # 为 demo 用户创建 1000 个会话与一组演示问答
+uv run python -m scripts.seed_kb              # 创建演示知识库「Java 并发笔记」并绑定到「代码专家」（幂等）
 ```
 
-用于验证侧边栏千级会话下的滚动、搜索与切换性能。
+`seed_demo_sessions` 用于验证侧边栏千级会话下的滚动、搜索与切换性能；`seed_kb` 首次运行会真实解析、切片并用 bge-m3 嵌入演示文档。
 
 ## 文档
 

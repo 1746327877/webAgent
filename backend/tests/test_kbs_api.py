@@ -1,4 +1,6 @@
+import asyncio
 import io
+import uuid
 
 from app.api.v1 import kbs as kbs_api
 
@@ -83,3 +85,22 @@ async def test_worker_settings_shape():
 
     assert WorkerSettings.redis_settings is not None
     assert len(WorkerSettings.functions) >= 1
+
+
+async def test_enqueue_ingest_uses_dedup_job_id(monkeypatch):
+    import arq
+
+    calls: list[tuple] = []
+
+    class FakePool:
+        async def enqueue_job(self, name, doc_id, **kwargs):
+            calls.append((name, doc_id, kwargs))
+
+    async def fake_create_pool(redis_settings):
+        return FakePool()
+
+    monkeypatch.setattr(arq, "create_pool", fake_create_pool)
+    doc_id = uuid.uuid4()
+    kbs_api.enqueue_ingest(doc_id)
+    await asyncio.sleep(0.05)
+    assert calls == [("ingest_job", str(doc_id), {"_job_id": f"ingest:{doc_id}"})]

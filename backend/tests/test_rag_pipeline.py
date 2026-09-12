@@ -20,6 +20,11 @@ def test_splitter_hard_split():
     assert len(chunks) >= 3
 
 
+def test_splitter_normalizes_crlf():
+    chunks = split_text("# 标题一\r\n第一段。\r\n\r\n第二段。", size=100)
+    assert chunks == ["# 标题一\n第一段。\n\n第二段。"]
+
+
 async def _seed_doc(
     session_maker, upload_dir: Path, content: str = "# 标题\n内容。\n\n第二段。"
 ) -> tuple:
@@ -69,6 +74,36 @@ async def test_run_ingest_ready_and_chunks(session_maker, tmp_path):
         chunks = (await db.scalars(select(Chunk).where(Chunk.kb_id == uuid.UUID(kb_id)))).all()
         assert chunks and all(" " in c.content_tokens for c in chunks)
         assert all(len(list(c.embedding)) == 1024 for c in chunks)
+
+
+async def test_run_ingest_rejects_path_traversal_stored_name(session_maker, tmp_path):
+    from app.ai.rag.pipeline import run_ingest
+
+    doc_id, _ = await _seed_doc(session_maker, tmp_path)
+    (tmp_path.parent / "outside.md").write_text("越界内容", encoding="utf-8")
+    async with session_maker() as db:
+        doc = await db.get(Document, uuid.UUID(doc_id))
+        doc.meta = {"stored_name": "../outside.md"}
+        await db.commit()
+
+    called = False
+
+    async def unexpected_embedder(texts: list[str]) -> list[list[float]]:
+        nonlocal called
+        called = True
+        return []
+
+    await run_ingest(
+        doc_id,
+        embedder=unexpected_embedder,
+        upload_dir=str(tmp_path),
+        session_factory=session_maker,
+    )
+    assert called is False
+    async with session_maker() as db:
+        doc = await db.get(Document, uuid.UUID(doc_id))
+        assert doc.status == "failed"
+        assert "上传文件丢失" in (doc.error or "")
 
 
 async def test_run_ingest_failure_sets_failed(session_maker, tmp_path):
