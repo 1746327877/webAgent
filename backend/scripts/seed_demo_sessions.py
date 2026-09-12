@@ -63,6 +63,9 @@ def build_flagship_messages() -> list[dict]:
     ]
 
 
+FILLER_TITLE_MARKER = " #0"  # 压力会话固定从 #0 起编，作为「已生成」的稳定信号
+
+
 async def main() -> None:
     async with SessionLocal() as db:
         user = await db.scalar(select(User).where(User.username == "demo"))
@@ -70,27 +73,36 @@ async def main() -> None:
             print("请先运行 scripts.seed 创建 demo 用户")
             return
         now = datetime.now(UTC)
-        sessions = []
-        for i in range(1000):
-            sessions.append(
-                Session(
-                    user_id=user.id,
-                    title=f"{random.choice(TOPICS)} #{i}",
-                    pinned=i < 2,
-                    last_message_at=now - timedelta(hours=i),
-                    created_at=now - timedelta(hours=i + 24),
-                )
+        filler_exists = await db.scalar(
+            select(Session.id).where(
+                Session.user_id == user.id,
+                Session.title.like(f"%{FILLER_TITLE_MARKER}"),
             )
-        db.add_all(sessions)
-        await db.flush()
-        demo = sessions[0]
-        db.add(Message(session_id=demo.id, role="user",
-                       blocks=[{"type": "text", "content": "什么是虚拟滚动？"}]))
-        db.add(Message(session_id=demo.id, role="assistant",
-                       blocks=[{"type": "text", "content": "只渲染可视区域节点的列表技术。"}],
-                       status="done"))
-        await db.commit()
-        print(f"已创建 1000 个会话；demo 会话 id = {demo.id}")
+        )
+        if filler_exists is not None:
+            print("演示压力会话已存在，跳过")
+        else:
+            sessions = []
+            for i in range(1000):
+                sessions.append(
+                    Session(
+                        user_id=user.id,
+                        title=f"{random.choice(TOPICS)} #{i}",
+                        pinned=i < 2,
+                        last_message_at=now - timedelta(hours=i),
+                        created_at=now - timedelta(hours=i + 24),
+                    )
+                )
+            db.add_all(sessions)
+            await db.flush()
+            demo = sessions[0]
+            db.add(Message(session_id=demo.id, role="user",
+                           blocks=[{"type": "text", "content": "什么是虚拟滚动？"}]))
+            db.add(Message(session_id=demo.id, role="assistant",
+                           blocks=[{"type": "text", "content": "只渲染可视区域节点的列表技术。"}],
+                           status="done"))
+            await db.commit()
+            print(f"已创建 1000 个会话；demo 会话 id = {demo.id}")
 
         flagship_title = "旗舰演示：Java 并发与 RAG"
         exists = await db.scalar(
