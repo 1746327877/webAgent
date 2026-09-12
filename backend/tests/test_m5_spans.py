@@ -1,5 +1,7 @@
+import asyncio
 import uuid
 
+import pytest
 from sqlalchemy import select
 
 from app.ai.deps import get_provider
@@ -89,3 +91,34 @@ async def test_large_span_output_truncated(client, auth_headers, session_maker):
     async with session_maker() as db:
         row = (await db.scalars(select(Span).where(Span.type == "llm"))).first()
     assert row.output.get("_truncated") is True
+
+
+async def test_interrupted_round_llm_span_stopped(client, auth_headers, session_maker):
+    """断连/取消（BaseException）中断的回合必须落库为 stopped，而非 ok。"""
+    from app.ai.providers.base import ChatEvent
+    from app.ai.runtime import run_generation
+    from app.models.user import User
+    from app.services import session_service
+
+    class CancelledAfterFirstToken(FakeProvider):
+        def chat_stream(self, req):
+            async def gen():
+                yield ChatEvent("token", {"delta": "部分"})
+                raise asyncio.CancelledError()
+
+            return gen()
+
+    session_data = (await client.post("/api/v1/sessions", json={}, headers=auth_headers)).json()
+    provider = CancelledAfterFirstToken([("token", {"delta": "x"})])
+
+    async with session_maker() as db:
+        user = (await db.scalars(select(User))).first()
+        session = await session_service.get_owned_session(db, user, session_data["id"])
+        gen = run_generation(db, session, provider, user_content="hi")
+        with pytest.raises(asyncio.CancelledError):
+            async for _ in gen:
+                pass
+
+    async with session_maker() as db:
+        row = (await db.scalars(select(Span).where(Span.type == "llm"))).first()
+    assert row is not None and row.status == "stopped"

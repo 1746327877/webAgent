@@ -566,6 +566,10 @@ async def run_generation(
                         )
                         await db.commit()
                         last_flush = now
+            except (asyncio.CancelledError, GeneratorExit):
+                # 断连/取消是 BaseException，不会进 except Exception：必须显式记 stopped
+                round_status = "stopped"
+                raise
             except Exception as exc:  # 记录 llm span 后交给外层统一转 SSE error
                 round_status, round_error = "error", str(exc)[:300]
                 raise
