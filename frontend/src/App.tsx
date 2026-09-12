@@ -7,6 +7,7 @@ import AgentsPage from "@/pages/AgentsPage";
 import AgentEditorPage from "@/pages/AgentEditorPage";
 import KbPage from "@/pages/KbPage";
 import KbDetailPage from "@/pages/KbDetailPage";
+import KeysPage from "@/pages/KeysPage";
 import RequireAuth from "@/components/RequireAuth";
 import ChatView from "@/components/chat/ChatView";
 import AdminTracePage from "@/pages/AdminTracePage";
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="agents/:agentId" element={<AgentEditorPage />} />
           <Route path="kb" element={<KbPage />} />
           <Route path="kb/:kbId" element={<KbDetailPage />} />
+          <Route path="keys" element={<KeysPage />} />
           <Route
             path="admin"
             element={

@@ -157,6 +157,14 @@ export default function SessionSidebar() {
           📚 知识库
         </NavLink>
         <NavLink
+          to="/keys"
+          className={({ isActive }) =>
+            `block rounded px-2 py-1.5 text-sm ${isActive ? "bg-accent" : "hover:bg-accent/50"}`
+          }
+        >
+          🔑 API 密钥
+        </NavLink>
+        <NavLink
           to="/admin"
           className={({ isActive }) =>
             `block rounded px-2 py-1.5 text-sm ${isActive ? "bg-accent" : "hover:bg-accent/50"}`

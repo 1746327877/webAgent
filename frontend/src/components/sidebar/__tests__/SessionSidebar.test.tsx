@@ -65,6 +65,7 @@ test("渲染会话标题", () => {
   );
   expect(screen.getByText("Java 学习")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "📊 可观测性" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "🔑 API 密钥" })).toHaveAttribute("href", "/keys");
 });
 
 test("删除当前会话后跳回 /", () => {
