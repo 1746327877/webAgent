@@ -103,7 +103,15 @@ export default function SessionSidebar() {
           </Button>
         )}
       </nav>
-      <div className="border-t p-2">
+      <div className="space-y-1 border-t p-2">
+        <NavLink
+          to="/agents"
+          className={({ isActive }) =>
+            `block rounded px-2 py-1.5 text-sm ${isActive ? "bg-accent" : "hover:bg-accent/50"}`
+          }
+        >
+          🤖 智能体
+        </NavLink>
         <Button variant="ghost" size="sm" className="w-full" onClick={() => setShowArchived((v) => !v)}>
           {showArchived ? "返回" : "查看归档"}
         </Button>
