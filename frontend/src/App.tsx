@@ -9,6 +9,7 @@ import KbPage from "@/pages/KbPage";
 import KbDetailPage from "@/pages/KbDetailPage";
 import RequireAuth from "@/components/RequireAuth";
 import ChatView from "@/components/chat/ChatView";
+import AdminTracePage from "@/pages/AdminTracePage";
 
 // echarts 体积大，仪表盘按路由懒加载，避免进入首屏 entry chunk
 const AdminDashboardPage = lazy(() => import("@/pages/AdminDashboardPage"));
@@ -44,6 +45,7 @@ export default function App() {
               </Suspense>
             }
           />
+          <Route path="admin/sessions/:sessionId" element={<AdminTracePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

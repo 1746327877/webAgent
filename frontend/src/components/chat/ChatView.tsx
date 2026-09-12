@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateSession,
@@ -283,6 +283,12 @@ export default function ChatView() {
           <div className="flex items-center gap-2 border-b px-4 py-2 text-sm">
             <span>{agent.emoji}</span>
             <span className="font-medium">{agent.name}</span>
+            <Link
+              to={`/admin/sessions/${sessionId}`}
+              className="ml-auto text-xs text-muted-foreground hover:underline"
+            >
+              查看调用链
+            </Link>
           </div>
         )}
         {showWelcome && agent ? (

@@ -265,6 +265,10 @@ test("助手消息显示智能体徽标与接力标签", async () => {
   renderAt("s1");
   expect(await screen.findByText("甲")).toBeInTheDocument();
   expect(await screen.findByText(/接力.*乙/)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "查看调用链" })).toHaveAttribute(
+    "href",
+    "/admin/sessions/s1",
+  );
 });
 
 test("图片先上传再随消息发送，用户消息附件经鉴权 blob 渲染", async () => {
