@@ -82,7 +82,7 @@ export default function MessageItem({
             <CitationList key="citations" citations={citations} onOpen={onOpenCitation} />
           );
         }
-        return <BlockRenderer key={i} block={b} maxRef={maxRef} onCitation={openByRef} />;
+        return <BlockRenderer key={i} block={b} maxRef={maxRef} onCitation={openByRef} streaming={message.status === "streaming"} />;
       })}
       {message.status === "error" && (
         <p className="text-sm text-red-500">生成失败，可点「重新生成」重试</p>

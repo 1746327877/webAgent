@@ -19,10 +19,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronDownIcon } from "lucide-react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useUiStore } from "@/stores/ui";
 
 export default function SessionSidebar() {
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const theme = useUiStore((s) => s.theme);
+  const toggleTheme = useUiStore((s) => s.toggleTheme);
+  const thinkingDefaultOpen = useUiStore((s) => s.thinkingDefaultOpen);
+  const setThinkingDefaultOpen = useUiStore((s) => s.setThinkingDefaultOpen);
   const debounced = useDebouncedValue(query, 300);
   const { data, fetchNextPage, hasNextPage } = useSessions(debounced, showArchived);
   const { data: agents = [] } = useAgents();
@@ -159,6 +164,26 @@ export default function SessionSidebar() {
         >
           📊 可观测性
         </NavLink>
+        <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex-1"
+            aria-label="切换主题"
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? "☀️ 亮色" : "🌙 暗色"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex-1"
+            aria-label="默认展开思考链"
+            onClick={() => setThinkingDefaultOpen(!thinkingDefaultOpen)}
+          >
+            🧠 {thinkingDefaultOpen ? "思考展开" : "思考折叠"}
+          </Button>
+        </div>
         <Button variant="ghost" size="sm" className="w-full" onClick={() => setShowArchived((v) => !v)}>
           {showArchived ? "返回" : "查看归档"}
         </Button>

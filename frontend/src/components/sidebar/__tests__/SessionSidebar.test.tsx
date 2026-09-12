@@ -21,6 +21,7 @@ vi.mock("@/api/agents", () => ({
 }));
 
 import SessionSidebar from "@/components/sidebar/SessionSidebar";
+import { useUiStore } from "@/stores/ui";
 
 function makeSession(overrides: Partial<SessionItem> = {}): SessionItem {
   return {
@@ -135,4 +136,16 @@ test("归档视图请求 archived=true，提供恢复并隐藏置顶/归档", ()
   expect(mocks.updateMutate).toHaveBeenCalledWith({ id: "a1", patch: { archived: false } });
   fireEvent.click(screen.getByRole("button", { name: "返回" }));
   expect(mocks.useSessions).toHaveBeenLastCalledWith("", false);
+});
+
+test("切换主题按钮为根节点添加 dark class", () => {
+  useUiStore.setState({ theme: "light" });
+  render(
+    <MemoryRouter>
+      <SessionSidebar />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "切换主题" }));
+  expect(document.documentElement.classList.contains("dark")).toBe(true);
+  document.documentElement.classList.remove("dark");
 });

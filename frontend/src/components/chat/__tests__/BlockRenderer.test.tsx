@@ -1,7 +1,14 @@
-import { render, screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { afterEach, expect, test } from "vitest";
 
 import BlockRenderer from "@/components/chat/BlockRenderer";
+import { useUiStore } from "@/stores/ui";
+
+afterEach(() => {
+  act(() => {
+    useUiStore.setState({ thinkingDefaultOpen: false });
+  });
+});
 
 test("渲染 tool_call 卡片", () => {
   render(
@@ -48,4 +55,25 @@ test("渲染 tool_result 状态与耗时", () => {
   );
   expect(screen.getByText(/12ms/)).toBeInTheDocument();
   expect(screen.getByText(/2026-09-11/)).toBeInTheDocument();
+});
+
+test("流式思考链自动展开并显示思考中", () => {
+  render(
+    <BlockRenderer block={{ type: "thinking", content: "推理中内容", duration_ms: null }} streaming />,
+  );
+  const details = screen.getByText("思考中…").closest("details");
+  expect(details).toHaveAttribute("open");
+  expect(screen.getByText("推理中内容")).toBeInTheDocument();
+});
+
+test("完成的思考链默认折叠并显示用时", () => {
+  render(<BlockRenderer block={{ type: "thinking", content: "推理完成", duration_ms: 3100 }} />);
+  const details = screen.getByText("已深度思考 · 用时 3.1s").closest("details");
+  expect(details).not.toHaveAttribute("open");
+});
+
+test("默认展开设置对历史消息生效", () => {
+  useUiStore.setState({ thinkingDefaultOpen: true });
+  render(<BlockRenderer block={{ type: "thinking", content: "历史推理", duration_ms: 1200 }} />);
+  expect(screen.getByText("历史推理").closest("details")).toHaveAttribute("open");
 });

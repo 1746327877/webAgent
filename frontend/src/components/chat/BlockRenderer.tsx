@@ -1,20 +1,44 @@
+import { useEffect, useState } from "react";
 import type { Block } from "@/api/sessions";
 import MarkdownContent from "@/components/chat/MarkdownContent";
+import { useUiStore } from "@/stores/ui";
 
 export default function BlockRenderer({
   block,
   maxRef = 0,
   onCitation,
+  streaming = false,
 }: {
   block: Block;
   /** 传给 text 分支：本消息已有的最大引用编号 */
   maxRef?: number;
   onCitation?: (ref: number) => void;
+  /** 流式输出中：thinking 块自动展开并显示「思考中…」 */
+  streaming?: boolean;
 }) {
+  const thinkingDefaultOpen = useUiStore((s) => s.thinkingDefaultOpen);
+  const [thinkingOpen, setThinkingOpen] = useState(thinkingDefaultOpen);
+
+  useEffect(() => {
+    setThinkingOpen(streaming || thinkingDefaultOpen);
+  }, [streaming, thinkingDefaultOpen]);
+
   if (block.type === "thinking") {
     return (
-      <details className="mb-1 rounded border px-3 py-2 text-sm text-muted-foreground">
-        <summary>思考过程{block.duration_ms ? `（${Math.round(block.duration_ms / 1000)}s）` : ""}</summary>
+      <details
+        open={thinkingOpen}
+        onToggle={(e) => setThinkingOpen(e.currentTarget.open)}
+        className="mb-1 rounded border px-3 py-2 text-sm text-muted-foreground"
+      >
+        <summary className="cursor-pointer select-none">
+          {streaming ? (
+            <span className="animate-pulse">思考中…</span>
+          ) : block.duration_ms ? (
+            `已深度思考 · 用时 ${(block.duration_ms / 1000).toFixed(1)}s`
+          ) : (
+            "思考过程"
+          )}
+        </summary>
         <p className="mt-1 whitespace-pre-wrap">{block.content}</p>
       </details>
     );
