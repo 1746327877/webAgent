@@ -16,12 +16,17 @@ vi.mock("@/api/sessions", () => ({
   useDeleteSession: () => ({ mutate: mocks.deleteMutate }),
 }));
 
+vi.mock("@/api/agents", () => ({
+  useAgents: () => ({ data: [] }),
+}));
+
 import SessionSidebar from "@/components/sidebar/SessionSidebar";
 
 function makeSession(overrides: Partial<SessionItem> = {}): SessionItem {
   return {
     id: "s1",
     title: "Java 学习",
+    agent_id: null,
     pinned: false,
     archived: false,
     last_message_at: new Date().toISOString(),

@@ -13,11 +13,24 @@ export default function BlockRenderer({ block }: { block: Block }) {
   if (block.type === "text") {
     return <MarkdownContent content={block.content ?? ""} />;
   }
-  if (block.type === "tool_call" || block.type === "tool_result") {
+  if (block.type === "tool_call") {
     return (
-      <div className="rounded border border-dashed p-2 text-xs text-muted-foreground">
-        工具调用（M2 起渲染）
+      <div className="my-1 rounded border border-dashed px-3 py-2 text-xs text-muted-foreground">
+        🔧 调用工具 <span className="font-mono">{String(block.tool)}</span>
+        {block.args && block.args !== "{}" ? <span className="ml-1 opacity-70">{String(block.args)}</span> : null}
       </div>
+    );
+  }
+  if (block.type === "tool_result") {
+    const ok = block.status === "ok";
+    return (
+      <details className="my-1 rounded border px-3 py-2 text-xs">
+        <summary className="cursor-pointer text-muted-foreground">
+          {ok ? "✅" : "⚠️"} {String(block.tool)} · {String(block.elapsed_ms ?? "")}ms
+          {!ok ? " · 失败" : ""}
+        </summary>
+        <p className="mt-1 whitespace-pre-wrap opacity-80">{String(block.preview ?? "")}</p>
+      </details>
     );
   }
   return null; // citation 等未知块忽略

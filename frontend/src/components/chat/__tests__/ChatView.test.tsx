@@ -25,6 +25,19 @@ vi.mock("react-virtuoso", () => ({
 vi.mock("@/api/sessions", () => ({
   useCreateSession: () => ({ mutateAsync: vi.fn() }),
   useMessages: () => ({ data: [] }),
+  useSession: () => ({ data: { id: "s1", agent_id: "a1" } }),
+}));
+
+vi.mock("@/api/agents", () => ({
+  useAgent: () => ({
+    data: {
+      id: "a1",
+      name: "代码专家",
+      emoji: "💻",
+      welcome_msg: "贴代码给我",
+      examples: ["帮我 review 这段"],
+    },
+  }),
 }));
 
 import ChatView from "@/components/chat/ChatView";
@@ -104,4 +117,10 @@ test("无会话时显示创建失败错误", () => {
     </QueryClientProvider>,
   );
   expect(screen.getByText("出错：创建失败")).toBeInTheDocument();
+});
+
+test("空会话展示智能体欢迎语与示例", async () => {
+  renderAt("s1");
+  expect(await screen.findByText("贴代码给我")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "帮我 review 这段" })).toBeInTheDocument();
 });

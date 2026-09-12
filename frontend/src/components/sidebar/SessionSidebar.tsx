@@ -7,9 +7,17 @@ import {
   useUpdateSession,
   type SessionItem,
 } from "@/api/sessions";
+import { useAgents } from "@/api/agents";
 import { groupByDate } from "@/lib/time";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDownIcon } from "lucide-react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 export default function SessionSidebar() {
@@ -17,6 +25,7 @@ export default function SessionSidebar() {
   const [showArchived, setShowArchived] = useState(false);
   const debounced = useDebouncedValue(query, 300);
   const { data, fetchNextPage, hasNextPage } = useSessions(debounced, showArchived);
+  const { data: agents = [] } = useAgents();
   const createSession = useCreateSession();
   const updateSession = useUpdateSession();
   const deleteSession = useDeleteSession();
@@ -33,6 +42,11 @@ export default function SessionSidebar() {
 
   async function onNew() {
     const s = await createSession.mutateAsync();
+    navigate(`/sessions/${s.id}`);
+  }
+
+  async function onNewAgent(agentId: string) {
+    const s = await createSession.mutateAsync(agentId);
     navigate(`/sessions/${s.id}`);
   }
 
@@ -81,7 +95,24 @@ export default function SessionSidebar() {
   return (
     <aside className="flex w-72 shrink-0 flex-col border-r">
       <div className="space-y-2 p-3">
-        <Button className="w-full" onClick={onNew}>＋ 新建任务</Button>
+        <div className="flex gap-1">
+          <Button className="flex-1" onClick={onNew}>＋ 新建任务</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={buttonVariants({ variant: "outline", size: "icon" })}
+              aria-label="选择智能体新建"
+            >
+              <ChevronDownIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {agents.map((agent) => (
+                <DropdownMenuItem key={agent.id} onClick={() => onNewAgent(agent.id)}>
+                  {agent.emoji} {agent.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <Input placeholder="搜索会话…" maxLength={64} value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
       <nav className="flex-1 overflow-y-auto px-2 pb-3">

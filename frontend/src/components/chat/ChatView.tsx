@@ -1,12 +1,14 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCreateSession, useMessages, type MessageItemData } from "@/api/sessions";
+import { useCreateSession, useMessages, useSession, type MessageItemData } from "@/api/sessions";
+import { useAgent } from "@/api/agents";
 import { apiFetch } from "@/lib/api";
 import { streamRequest } from "@/lib/stream";
 import type { SSEEvent } from "@/lib/sse";
 import Composer from "@/components/chat/Composer";
 import MessageActions from "@/components/chat/MessageActions";
 import MessageList from "@/components/chat/MessageList";
+import { Button } from "@/components/ui/button";
 import { useChatStreamStore } from "@/stores/chatStream";
 
 export default function ChatView() {
@@ -15,6 +17,8 @@ export default function ChatView() {
   const queryClient = useQueryClient();
   const createSession = useCreateSession();
   const { data: messages = [] } = useMessages(sessionId);
+  const { data: session } = useSession(sessionId);
+  const { data: agent } = useAgent(session?.agent_id ?? undefined);
   const { active, error, start, appendToken, appendThinking, setError, clear, clearActive } =
     useChatStreamStore();
   const ownsActive = Boolean(active && active.sessionId === sessionId);
@@ -137,22 +141,49 @@ export default function ChatView() {
       : null;
 
   const items = streamingMessage ? [...visible, streamingMessage] : visible;
+  // 空会话（无消息、无流式叠加）且有智能体时展示欢迎区
+  const showWelcome = messages.length === 0 && !streamingMessage && Boolean(agent);
 
   return (
     <>
-      <MessageList
-        items={items}
-        renderActions={(m) =>
-          m.status === "streaming" ? null : (
-            <MessageActions
-              message={m}
-              onRegenerate={regenerate}
-              onEdit={editAndResend}
-              onRate={rate}
-            />
-          )
-        }
-      />
+      {agent && (
+        <div className="flex items-center gap-2 border-b px-4 py-2 text-sm">
+          <span>{agent.emoji}</span>
+          <span className="font-medium">{agent.name}</span>
+        </div>
+      )}
+      {showWelcome && agent ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          <div className="text-4xl">{agent.emoji}</div>
+          <div>
+            <p className="font-medium">{agent.name}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{agent.welcome_msg || "开始对话吧"}</p>
+          </div>
+          {agent.examples.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-2">
+              {agent.examples.map((example) => (
+                <Button key={example} variant="outline" size="sm" onClick={() => send(example)}>
+                  {example}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <MessageList
+          items={items}
+          renderActions={(m) =>
+            m.status === "streaming" ? null : (
+              <MessageActions
+                message={m}
+                onRegenerate={regenerate}
+                onEdit={editAndResend}
+                onRate={rate}
+              />
+            )
+          }
+        />
+      )}
       {scopedError && <p className="px-4 py-2 text-sm text-red-500">出错：{scopedError}</p>}
       <Composer onSend={send} onStop={stop} generating={ownsActive} />
     </>

@@ -4,6 +4,7 @@ import { apiFetch, apiJson } from "@/lib/api";
 export interface SessionItem {
   id: string;
   title: string;
+  agent_id: string | null;
   pinned: boolean;
   archived: boolean;
   last_message_at: string | null;
@@ -51,8 +52,20 @@ export function useSessions(query: string, archived = false) {
 export function useCreateSession() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => apiJson<SessionItem>("/api/v1/sessions", { method: "POST", body: "{}" }),
+    mutationFn: (agentId?: string) =>
+      apiJson<SessionItem>("/api/v1/sessions", {
+        method: "POST",
+        body: JSON.stringify(agentId ? { agent_id: agentId } : {}),
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+}
+
+export function useSession(id: string | undefined) {
+  return useQuery({
+    queryKey: ["session", id],
+    queryFn: () => apiJson<SessionItem>(`/api/v1/sessions/${id}`),
+    enabled: Boolean(id),
   });
 }
 
