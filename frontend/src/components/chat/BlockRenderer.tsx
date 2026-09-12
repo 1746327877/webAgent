@@ -14,10 +14,13 @@ export default function BlockRenderer({ block }: { block: Block }) {
     return <MarkdownContent content={block.content ?? ""} />;
   }
   if (block.type === "tool_call") {
+    const rawArgs = block.args;
+    const argsText =
+      typeof rawArgs === "string" ? rawArgs : rawArgs ? JSON.stringify(rawArgs) : "";
     return (
       <div className="my-1 rounded border border-dashed px-3 py-2 text-xs text-muted-foreground">
         🔧 调用工具 <span className="font-mono">{String(block.tool)}</span>
-        {block.args && block.args !== "{}" ? <span className="ml-1 opacity-70">{String(block.args)}</span> : null}
+        {argsText && argsText !== "{}" ? <span className="ml-1 opacity-70">{argsText}</span> : null}
       </div>
     );
   }

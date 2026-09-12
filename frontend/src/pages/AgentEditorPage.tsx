@@ -181,7 +181,7 @@ export default function AgentEditorPage() {
         {error && <p className="text-sm text-red-500">{error}</p>}
 
         <AgentForm
-          key={agentId ?? "new"}
+          key={isNew ? "new" : `form:${agentId}:${agent?.updated_at ?? ""}`}
           initial={isNew ? undefined : agent}
           onSubmit={onSubmit}
           saving={saving}
