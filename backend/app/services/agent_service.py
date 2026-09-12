@@ -81,12 +81,14 @@ async def _tool_slugs(db: AsyncSession, agent_id) -> list[str]:
             select(Tool.slug)
             .join(AgentTool, AgentTool.tool_id == Tool.id)
             .where(AgentTool.agent_id == agent_id, Tool.enabled.is_(True))
+            .order_by(Tool.slug)
         )
     ).all()
     return list(rows)
 
 
 async def set_tools(db: AsyncSession, agent: Agent, slugs: list[str]) -> list[str]:
+    slugs = list(dict.fromkeys(slugs))
     await db.execute(delete(AgentTool).where(AgentTool.agent_id == agent.id))
     bound: list[str] = []
     for slug in slugs:

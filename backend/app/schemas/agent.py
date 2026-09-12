@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelConfig(BaseModel):
-    provider: str = "ollama"
-    model: str
+    provider: Literal["ollama"] = "ollama"
+    model: str = Field(min_length=1)
     temperature: float = Field(0.7, ge=0, le=2)
     top_p: float = Field(0.9, ge=0, le=1)
     max_tokens: int = Field(2048, ge=128, le=8192)

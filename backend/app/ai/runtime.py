@@ -48,6 +48,20 @@ def _text_of(blocks: list[dict]) -> str:
     return "".join(b.get("content", "") for b in blocks if b.get("type") == "text")
 
 
+def _merge_usage(acc: dict | None, new: dict | None) -> dict | None:
+    if new is None:
+        return acc
+    if acc is None:
+        return dict(new)
+    for key in ("prompt_tokens", "completion_tokens", "total_ms"):
+        a, b = acc.get(key), new.get(key)
+        if b is not None:
+            acc[key] = (a or 0) + b
+    if acc.get("first_token_ms") is None:
+        acc["first_token_ms"] = new.get("first_token_ms")
+    return acc
+
+
 async def _load_history(
     db: AsyncSession, session_id: uuid.UUID, exclude_ids: set[uuid.UUID], rounds: int
 ) -> list[dict]:
@@ -129,7 +143,7 @@ async def run_generation(
             blocks=[{"type": "text", "content": user_content}],
         )
         db.add(user_msg)
-        # 独立事务提交：与 assistant 占位分开，使 created_at 严格递增，历史排序稳定
+        # 独立事务提交：与 assistant 占位分开；历史排序以 seq 为准，不依赖 created_at
         await db.commit()
         exclude_ids.add(user_msg.id)
 
@@ -223,8 +237,7 @@ async def run_generation(
                 elif ev.type == "tool_call":
                     tool_calls.append(ev.payload)
                 elif ev.type == "usage":
-                    if ev.payload:
-                        usage = ev.payload
+                    usage = _merge_usage(usage, ev.payload)
 
                 if now - last_flush >= FLUSH_INTERVAL_S:
                     await db.execute(
@@ -269,7 +282,12 @@ async def run_generation(
                     ],
                 }
             )
+            cancelled_during_tools = False
             for call in tool_calls:
+                if CANCEL_FLAGS.pop(assistant_id, False):
+                    status = "stopped"
+                    cancelled_during_tools = True
+                    break
                 started = time.monotonic()
                 result, tool_status = await _execute_tool(call["name"], call.get("args") or "")
                 elapsed = round((time.monotonic() - started) * 1000)
@@ -294,7 +312,11 @@ async def run_generation(
                         "preview": preview,
                     },
                 )
-                messages.append({"role": "tool", "content": result[:TOOL_RESULT_MAX]})
+                messages.append(
+                    {"role": "tool", "content": result[:TOOL_RESULT_MAX], "tool_name": call["name"]}
+                )
+            if cancelled_during_tools:
+                break
     except asyncio.CancelledError:
         await _finalize(db, assistant_id, session.id, blocks, "stopped", usage, None)
         raise
