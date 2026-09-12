@@ -1,4 +1,5 @@
-from collections.abc import AsyncIterator
+import inspect
+from collections.abc import AsyncIterator, Callable
 from dataclasses import replace
 
 from app.ai.providers.base import (
@@ -18,12 +19,16 @@ class FakeProvider(ModelProvider):
     构造参数可为单脚本 ``list[tuple[str, dict]]``（兼容旧用法）或多轮脚本
     ``list[list[tuple[str, dict]]]``。``raise_after`` 作用于每轮内的事件序号。
     每次 ``chat_stream`` 记录请求到 ``requests`` 与 ``last_request``。
+
+    ``embed_vectors`` 可覆盖 embed 返回值；实例属性 ``embed_fn``（设置后优先）
+    接收 texts 并返回/等待向量列表。
     """
 
     def __init__(
         self,
         script: list[tuple[str, dict]] | list[list[tuple[str, dict]]] | None = None,
         raise_after: int | None = None,
+        embed_vectors: list[list[float]] | None = None,
     ):
         if not script:
             rounds: list[list[tuple[str, dict]]] = [[("token", {"delta": "你好"})]]
@@ -34,6 +39,8 @@ class FakeProvider(ModelProvider):
         self.rounds = rounds
         self.script = rounds[0]
         self.raise_after = raise_after
+        self.embed_vectors = embed_vectors
+        self.embed_fn: Callable | None = None
         self.requests: list[ChatRequest] = []
         self.last_request: ChatRequest | None = None
         self._round_index = 0
@@ -63,7 +70,15 @@ class FakeProvider(ModelProvider):
         return gen()
 
     async def embed(self, texts, model):
-        return [[0.0] for _ in texts]
+        if self.embed_fn is not None:
+            result = self.embed_fn(texts)
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+        if self.embed_vectors is not None:
+            return self.embed_vectors
+        # 默认确定性 1024 维向量（首位随文本哈希变化，其余为 0）
+        return [[float(hash(t) % 100) / 100] + [0.0] * 1023 for t in texts]
 
     async def list_available(self) -> list[ModelInfo]:
         return []

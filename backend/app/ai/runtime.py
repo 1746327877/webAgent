@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -21,12 +21,24 @@ TOOL_RESULT_MAX = 8000
 TOOL_PREVIEW_LEN = 200
 CANCEL_FLAGS: dict[uuid.UUID, bool] = {}
 
+Embedder = Callable[[list[str]], Awaitable[list[list[float]]]]
+
 
 def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _execute_tool(name: str, args: str | dict) -> tuple[str, str]:
+async def _execute_tool(
+    name: str,
+    args: str | dict,
+    *,
+    agent_id: uuid.UUID | None = None,
+    db: AsyncSession | None = None,
+    assistant_id: uuid.UUID | None = None,
+    session_id: uuid.UUID | None = None,
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
+    embedder: Embedder | None = None,
+) -> tuple[str, str]:
     from app.ai.tools.registry import get_tool
 
     item = get_tool(name)
@@ -38,10 +50,113 @@ async def _execute_tool(name: str, args: str | dict) -> tuple[str, str]:
             parsed = args
         else:
             parsed = json.loads(args) if args else {}
+        # kb_search 在 runtime 层拦截为真实检索（使用智能体绑定的 KB）
+        if name == "kb_search" and agent_id is not None and db is not None:
+            query = str(parsed.get("query", "")).strip()
+            top_k = parsed.get("top_k")
+            try:
+                top_k = int(top_k) if top_k is not None else None
+            except (TypeError, ValueError):
+                top_k = None
+            chunks = (
+                await _retrieve_for_agent(
+                    db,
+                    agent_id,
+                    query,
+                    assistant_id=assistant_id,
+                    session_id=session_id,
+                    top_k=top_k,
+                    session_maker=session_maker,
+                    embedder=embedder,
+                )
+                if query
+                else []
+            )
+            if chunks:
+                from app.ai.rag.retrieval import format_context
+
+                return format_context(chunks), "ok"
+            return "未绑定知识库或检索不可用，请直接基于已有知识回答。", "ok"
         result = await asyncio.wait_for(item.handler(**parsed), timeout=TOOL_TIMEOUT_S)
         return str(result), "ok"
     except Exception as exc:  # noqa: BLE001 —— 工具失败转为错误结果回填，不中断生成
         return f"工具执行失败：{exc}", "error"
+
+
+async def _default_embedder(texts: list[str]) -> list[list[float]]:
+    from app.ai.providers.ollama import OllamaProvider
+    from app.core.config import settings
+
+    provider = OllamaProvider(settings.ollama_base_url)
+    try:
+        return await provider.embed(texts, settings.embedding_model)
+    finally:
+        await provider.aclose()
+
+
+def _provider_embedder(provider: ModelProvider) -> Embedder:
+    """复用请求内 Provider 做查询嵌入，便于测试注入并在生产复用连接。"""
+
+    async def embed(texts: list[str]) -> list[list[float]]:
+        from app.core.config import settings
+
+        return await provider.embed(texts, settings.embedding_model)
+
+    return embed
+
+
+async def _retrieve_for_agent(
+    db: AsyncSession,
+    agent_id: uuid.UUID,
+    query: str,
+    *,
+    assistant_id: uuid.UUID | None,
+    session_id: uuid.UUID | None,
+    top_k: int | None = None,
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
+    embedder: Embedder | None = None,
+) -> list:
+    """按智能体绑定的 KB 检索；命中返回 RetrievedChunk 列表；写 retrieval span。"""
+    from app.ai.rag.retrieval import hybrid_search
+    from app.models import AgentKB
+    from app.observability.spans import record_span
+
+    bindings = (await db.scalars(select(AgentKB).where(AgentKB.agent_id == agent_id))).all()
+    if not bindings:
+        return []
+    kb_ids = [b.kb_id for b in bindings]
+    limit = top_k or max((b.top_k for b in bindings), default=5)
+    if session_maker is None:
+        from app.core.db import SessionLocal
+
+        session_maker = SessionLocal
+
+    started = time.monotonic()
+    try:
+        chunks = await hybrid_search(
+            session_maker, kb_ids, query, limit, embedder or _default_embedder
+        )
+        status, err = "ok", None
+    except Exception as exc:  # noqa: BLE001 —— 检索失败降级为空结果，生成不中断
+        chunks, status, err = [], "error", str(exc)[:300]
+    await record_span(
+        db,
+        trace_id=assistant_id if assistant_id is not None else agent_id,
+        type="retrieval",
+        name="kb检索",
+        session_id=session_id,
+        agent_id=agent_id,
+        input={"query": query, "kb_ids": [str(k) for k in kb_ids]},
+        output={
+            "chunks": [
+                {"id": c.id, "source": c.source, "score": c.rrf_score} for c in chunks
+            ]
+        },
+        status=status,
+        error=err,
+        started=started,
+    )
+    return chunks
 
 
 def _text_of(blocks: list[dict]) -> str:
@@ -184,6 +299,49 @@ async def run_generation(
         if user_content is not None:
             messages.append({"role": "user", "content": user_content})
 
+        retrieval_chunks: list = []
+        embedder = _provider_embedder(provider)
+        if cfg.agent_id is not None and user_content is not None:
+            retrieval_chunks = await _retrieve_for_agent(
+                db,
+                cfg.agent_id,
+                user_content,
+                assistant_id=assistant_id,
+                session_id=session.id,
+                session_maker=session_factory,
+                embedder=embedder,
+            )
+
+        if retrieval_chunks:
+            from app.ai.rag.retrieval import format_context
+
+            context = format_context(retrieval_chunks)
+            if cfg.system_prompt:
+                messages[0]["content"] = cfg.system_prompt + "\n\n" + context
+            else:
+                messages.insert(0, {"role": "system", "content": context})
+            citation_blocks = [
+                {
+                    "type": "citation",
+                    "ref": i,
+                    "chunk_id": c.id,
+                    "source": c.source,
+                    "page": c.page,
+                    "score": round(c.rrf_score, 4),
+                    "snippet": c.content[:200],
+                }
+                for i, c in enumerate(retrieval_chunks, 1)
+            ]
+            blocks.extend(citation_blocks)
+            for block in citation_blocks:
+                yield sse(
+                    "citation",
+                    {
+                        "message_id": str(assistant_id),
+                        **{k: v for k, v in block.items() if k != "type"},
+                    },
+                )
+
         cancelled = False
         for _ in range(MAX_TOOL_ROUNDS):
             req = ChatRequest(
@@ -289,7 +447,16 @@ async def run_generation(
                     cancelled_during_tools = True
                     break
                 started = time.monotonic()
-                result, tool_status = await _execute_tool(call["name"], call.get("args") or "")
+                result, tool_status = await _execute_tool(
+                    call["name"],
+                    call.get("args") or "",
+                    agent_id=cfg.agent_id,
+                    db=db,
+                    assistant_id=assistant_id,
+                    session_id=session.id,
+                    session_maker=session_factory,
+                    embedder=embedder,
+                )
                 elapsed = round((time.monotonic() - started) * 1000)
                 preview = result[:TOOL_PREVIEW_LEN]
                 blocks.append(
