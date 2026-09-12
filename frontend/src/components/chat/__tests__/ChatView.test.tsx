@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { MessageItemData } from "@/api/sessions";
 
@@ -23,10 +23,17 @@ vi.mock("react-virtuoso", () => ({
   ),
 }));
 
+// 各用例可按需覆盖的 mock 数据；beforeEach 恢复默认，避免用例间串扰
+const mockState = vi.hoisted(() => ({
+  messages: [] as MessageItemData[],
+  agents: [] as { id: string; name: string; emoji: string }[],
+  session: { id: "s1", agent_id: "a1" } as { id: string; agent_id: string | null },
+}));
+
 vi.mock("@/api/sessions", () => ({
   useCreateSession: () => ({ mutateAsync: vi.fn() }),
-  useMessages: () => ({ data: [] }),
-  useSession: () => ({ data: { id: "s1", agent_id: "a1" } }),
+  useMessages: () => ({ data: mockState.messages }),
+  useSession: () => ({ data: mockState.session }),
 }));
 
 vi.mock("@/api/agents", () => ({
@@ -39,6 +46,7 @@ vi.mock("@/api/agents", () => ({
       examples: ["帮我 review 这段"],
     },
   }),
+  useAgents: () => ({ data: mockState.agents }),
 }));
 
 // 流式事件按序同步派发后挂起，便于断言叠加层渲染（结束后会被 clearActive 清掉）
@@ -89,6 +97,12 @@ function renderAt(sessionId: string) {
     </QueryClientProvider>,
   );
 }
+
+beforeEach(() => {
+  mockState.messages = [];
+  mockState.agents = [];
+  mockState.session = { id: "s1", agent_id: "a1" };
+});
 
 afterEach(() => {
   cleanup();
@@ -190,4 +204,36 @@ test("citation/tool 事件流式出现，点击角标打开依据抽屉", async 
   await userEvent.click(link);
   expect(await screen.findByText("混合检索片段")).toBeInTheDocument();
   expect(screen.getByText(/第 3 页/)).toBeInTheDocument();
+});
+
+test("助手消息显示智能体徽标与接力标签", async () => {
+  mockState.messages = [
+    {
+      id: "m1",
+      role: "assistant",
+      blocks: [{ type: "text", content: "主智能体回答" }],
+      status: "done",
+      rating: null,
+      error: null,
+      created_at: "2026-09-12T10:00:00Z",
+      agent_id: "a1",
+    },
+    {
+      id: "m2",
+      role: "assistant",
+      blocks: [{ type: "text", content: "接力回答" }],
+      status: "done",
+      rating: null,
+      error: null,
+      created_at: "2026-09-12T10:00:01Z",
+      agent_id: "a2",
+    },
+  ];
+  mockState.agents = [
+    { id: "a1", name: "甲", emoji: "🅰" },
+    { id: "a2", name: "乙", emoji: "🅱" },
+  ];
+  renderAt("s1");
+  expect(await screen.findByText("甲")).toBeInTheDocument();
+  expect(await screen.findByText(/接力.*乙/)).toBeInTheDocument();
 });

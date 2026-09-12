@@ -8,9 +8,17 @@ interface Props {
   items: MessageItemData[];
   renderActions: (m: MessageItemData) => ReactNode;
   onOpenCitation?: (citation: Citation) => void;
+  agentOf?: (m: MessageItemData) => { emoji: string; name: string } | undefined;
+  isRelayOf?: (m: MessageItemData) => boolean;
 }
 
-export default function MessageList({ items, renderActions, onOpenCitation }: Props) {
+export default function MessageList({
+  items,
+  renderActions,
+  onOpenCitation,
+  agentOf,
+  isRelayOf,
+}: Props) {
   return (
     <Virtuoso
       data={items}
@@ -19,7 +27,13 @@ export default function MessageList({ items, renderActions, onOpenCitation }: Pr
       className="min-h-0 flex-1"
       itemContent={(_, m) => (
         <div className="px-4 py-2">
-          <MessageItem message={m} actions={renderActions(m)} onOpenCitation={onOpenCitation} />
+          <MessageItem
+            message={m}
+            actions={renderActions(m)}
+            onOpenCitation={onOpenCitation}
+            agent={agentOf?.(m)}
+            isRelay={isRelayOf?.(m)}
+          />
         </div>
       )}
     />

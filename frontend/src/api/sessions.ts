@@ -27,6 +27,7 @@ export interface Block {
 export interface MessageItemData {
   id: string;
   role: string;
+  agent_id?: string | null;
   blocks: Block[];
   status: string;
   rating: number | null;

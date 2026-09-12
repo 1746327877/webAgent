@@ -8,7 +8,7 @@ import {
   type Block,
   type MessageItemData,
 } from "@/api/sessions";
-import { useAgent } from "@/api/agents";
+import { useAgent, useAgents } from "@/api/agents";
 import { apiFetch } from "@/lib/api";
 import { streamRequest } from "@/lib/stream";
 import type { SSEEvent } from "@/lib/sse";
@@ -36,6 +36,8 @@ export default function ChatView() {
   const { data: messages = [] } = useMessages(sessionId);
   const { data: session } = useSession(sessionId);
   const { data: agent } = useAgent(session?.agent_id ?? undefined);
+  const { data: agents = [] } = useAgents();
+  const agentById = new Map(agents.map((a) => [a.id, a]));
   const {
     active,
     error,
@@ -111,7 +113,7 @@ export default function ChatView() {
     }
   }
 
-  async function send(text: string) {
+  async function send(text: string, mentions: string[] = []) {
     let target = sessionId;
     if (!target) {
       try {
@@ -123,7 +125,12 @@ export default function ChatView() {
         return;
       }
     }
-    await runStream(`/api/v1/sessions/${target}/messages`, { content: text }, target, "发送失败");
+    await runStream(
+      `/api/v1/sessions/${target}/messages`,
+      { content: text, mentions },
+      target,
+      "发送失败",
+    );
   }
 
   async function regenerate(messageId: string) {
@@ -195,6 +202,11 @@ export default function ChatView() {
       : null;
 
   const items = streamingMessage ? [...visible, streamingMessage] : visible;
+  // 流式叠加层属于当前回合（会话主智能体）；历史消息按 agent_id 映射归属
+  const messageAgent = (m: MessageItemData) =>
+    m.status === "streaming" ? agent : m.agent_id ? agentById.get(m.agent_id) : undefined;
+  const messageIsRelay = (m: MessageItemData) =>
+    Boolean(m.agent_id && m.agent_id !== session?.agent_id);
   // 空会话（无消息、无流式叠加）且有智能体时展示欢迎区
   const showWelcome = messages.length === 0 && !streamingMessage && Boolean(agent);
 
@@ -227,6 +239,8 @@ export default function ChatView() {
         ) : (
           <MessageList
             items={items}
+            agentOf={messageAgent}
+            isRelayOf={messageIsRelay}
             onOpenCitation={setOpenCitation}
             renderActions={(m) =>
               m.status === "streaming" ? null : (
@@ -241,7 +255,7 @@ export default function ChatView() {
           />
         )}
         {scopedError && <p className="px-4 py-2 text-sm text-red-500">出错：{scopedError}</p>}
-        <Composer onSend={send} onStop={stop} generating={ownsActive} />
+        <Composer onSend={send} onStop={stop} generating={ownsActive} agents={agents} />
       </div>
       {openCitation && (
         <aside

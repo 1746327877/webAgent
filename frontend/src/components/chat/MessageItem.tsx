@@ -21,10 +21,14 @@ export default function MessageItem({
   message,
   actions,
   onOpenCitation,
+  agent,
+  isRelay,
 }: {
   message: MessageItemData;
   actions?: ReactNode;
   onOpenCitation?: (citation: Citation) => void;
+  agent?: { emoji: string; name: string };
+  isRelay?: boolean;
 }) {
   if (message.role === "user") {
     const text = message.blocks.find((b) => b.type === "text")?.content ?? "";
@@ -50,6 +54,12 @@ export default function MessageItem({
   const firstCitationIndex = message.blocks.findIndex((b) => b.type === "citation");
   return (
     <div className="space-y-1">
+      {agent && (
+        <p className="mb-1 text-xs text-muted-foreground">
+          {isRelay ? "接力 · " : ""}
+          <span>{agent.emoji}</span> {agent.name}
+        </p>
+      )}
       {message.blocks.map((b, i) => {
         if (b.type === "citation") {
           if (i !== firstCitationIndex) return null;
