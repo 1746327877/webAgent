@@ -1,4 +1,5 @@
 from app.models.agent import Agent, AgentVersion
+from app.models.api_key import ApiKey
 from app.models.base import Base
 from app.models.knowledge import AgentKB, Chunk, Document, KnowledgeBase
 from app.models.model_event import ModelEvent
@@ -15,6 +16,7 @@ __all__ = [
     "AgentVersion",
     "AlertEvent",
     "AlertRule",
+    "ApiKey",
     "Attachment",
     "Base",
     "Chunk",

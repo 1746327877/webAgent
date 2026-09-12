@@ -6,6 +6,7 @@ from app.api.v1 import (
     attachments,
     auth,
     kbs,
+    keys,
     messages,
     model_admin,
     models,
@@ -22,5 +23,6 @@ api_router.include_router(agents.router)
 api_router.include_router(models.router)
 api_router.include_router(model_admin.router)
 api_router.include_router(kbs.router)
+api_router.include_router(keys.router)
 api_router.include_router(attachments.router)
 api_router.include_router(admin.router)

@@ -25,3 +25,18 @@ async def get_current_user(
     if user is None or user.status != "active":
         raise HTTPException(status_code=401, detail="用户不存在或已禁用")
     return user
+
+
+async def get_api_key_user(
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """第二套认证：Authorization: Bearer sk-...（OpenAI 兼容端点用）。"""
+    if creds is None:
+        raise HTTPException(status_code=401, detail="缺少 API Key")
+    from app.services.api_key_service import resolve_key_user
+
+    user = await resolve_key_user(db, creds.credentials)
+    if user is None:
+        raise HTTPException(status_code=401, detail="无效的 API Key")
+    return user
