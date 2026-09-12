@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -6,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.models import Attachment
+
+logger = logging.getLogger(__name__)
 
 
 async def cleanup_orphan_attachments(
@@ -33,9 +36,18 @@ async def cleanup_orphan_attachments(
                 )
             )
         ).all()
+        removed = 0
         for att in rows:
             if "/" not in att.file_path and "\\" not in att.file_path:
-                (root / att.file_path).unlink(missing_ok=True)
+                try:
+                    (root / att.file_path).unlink(missing_ok=True)
+                except OSError as exc:
+                    # 单文件失败（如 Windows 文件占用）不拖垮整批；保留行下轮重试
+                    logger.warning(
+                        "附件清理失败，保留待重试 file=%s error=%s", att.file_path, exc
+                    )
+                    continue
             await db.delete(att)
+            removed += 1
         await db.commit()
-        return len(rows)
+        return removed

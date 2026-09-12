@@ -47,7 +47,10 @@ class SpanBuffer:
             db.add_all([Span(**row) for row in rows])
             await db.commit()
         except Exception:  # noqa: BLE001 —— 观测写入失败只丢观测
-            await db.rollback()
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001, S110 —— rollback 也不可用时不得上抛
+                pass
 
 
 async def record_span(

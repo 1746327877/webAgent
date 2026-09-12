@@ -80,6 +80,17 @@ class ModelManager:
             )
             return {"switched": True, "from": prev, "to": model, "duration_ms": duration}
 
+    async def unload(self, model: str, *, trigger: str = "manual") -> dict:
+        """手动卸载：只卸载当前驻留槽位，绝不触发未驻留模型的加载。"""
+        async with self._lock:
+            if self._current != model:
+                return {"unloaded": False, "reason": "not_current"}
+            vram_before = await self._vram_mb()
+            await self.provider.unload(model)
+            self._current = None
+            await self._log(model, "unload", trigger, vram_before_mb=vram_before)
+            return {"unloaded": True}
+
     async def watch_once(self) -> None:
         try:
             loaded = await self.provider.list_loaded()
