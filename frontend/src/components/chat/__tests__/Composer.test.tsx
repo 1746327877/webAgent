@@ -174,6 +174,7 @@ test("输入框为多行 textarea，会话内与落地态高度递增", () => {
   const input = screen.getByPlaceholderText("输入问题，Enter 发送");
   expect(input.tagName).toBe("TEXTAREA");
   expect(input).toHaveClass("min-h-24");
+  expect(input).toHaveClass("md:text-base");
   rerender(
     <Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} variant="landing" />,
   );

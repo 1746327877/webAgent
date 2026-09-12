@@ -11,6 +11,18 @@ function AttachmentThumb({ id }: { id: string }) {
   return <img src={url} alt="附件图片" className="h-24 w-24 rounded-md object-cover" />;
 }
 
+/** 文档附件：不请求 blob / 不渲染 <img>，只展示文件名 chip */
+function DocumentChip({ name }: { name: string }) {
+  return (
+    <span className="flex max-w-64 items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1 text-xs">
+      <span aria-hidden>📄</span>
+      <span className="truncate" title={name}>
+        {name}
+      </span>
+    </span>
+  );
+}
+
 /** 持久化 citation 块 → Citation（字段缺失时兜底为空串/0，避免渲染崩溃） */
 function toCitation(block: Block): Citation {
   const page = block.page;
@@ -50,9 +62,13 @@ export default function MessageItem({
       <div className="flex flex-col items-end gap-1">
         {attachments.length > 0 && (
           <div className="flex flex-wrap justify-end gap-1">
-            {attachments.map((a) => (
-              <AttachmentThumb key={a.id} id={a.id} />
-            ))}
+            {attachments.map((a) =>
+              a.kind === "image" ? (
+                <AttachmentThumb key={a.id} id={a.id} />
+              ) : (
+                <DocumentChip key={a.id} name={a.original_name ?? "附件"} />
+              ),
+            )}
           </div>
         )}
         <span className="max-w-[80%] rounded-lg bg-primary px-3 py-2 text-primary-foreground">

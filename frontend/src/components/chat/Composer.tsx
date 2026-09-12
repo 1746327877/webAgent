@@ -249,8 +249,8 @@ export default function Composer({
           }}
           placeholder="输入问题，Enter 发送"
           className={cn(
-            "min-h-24 resize-none border-0 bg-transparent px-3 py-3 text-base shadow-none focus-visible:ring-0",
-            variant === "landing" && "min-h-40 text-base",
+            "min-h-24 resize-none border-0 bg-transparent px-3 py-3 text-base shadow-none focus-visible:ring-0 md:text-base",
+            variant === "landing" && "min-h-40 md:text-base",
           )}
         />
         <div className="flex items-center gap-2 px-1">
