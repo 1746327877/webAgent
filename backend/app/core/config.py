@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     mineru_timeout_s: float = 300.0
     # MinerU 解析后端：pipeline 支持纯 CPU；hybrid/vlm 需要 CUDA（默认 hybrid 会报 CUDA is not available）
     mineru_backend: str = "pipeline"
+    # 联网搜索 MCP（compose 的 web-search 服务）；为空表示不支持联网搜索按钮
+    web_search_mcp_url: str = ""
+    # OCR MCP（部署方自备的 OCR 服务）；为空表示图片回合不挂 OCR 工具
+    ocr_mcp_url: str = ""
 
 
 settings = Settings()

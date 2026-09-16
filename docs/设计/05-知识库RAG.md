@@ -35,11 +35,11 @@ flowchart LR
 
 | 参数 | 值 | 说明 |
 |---|---|---|
-| chunk_size | 512 token | 用 tiktoken 粗算 |
-| chunk_overlap | 64 token | 保住跨片语义 |
-| 优先级 | Markdown 标题树 > 段落 > 递归字符 | PDF 先转伪 Markdown（PyMuPDF 提取 heading） |
+| chunk_size | 512 字符 | 按字符数计长，不做 token 估算 |
+| chunk_overlap | 64 字符 | 仅在"单块无任何分隔符、降级硬切"时生效（见 `17-分块策略`） |
+| 优先级 | Markdown 标题树 > 段落 > 行 > 句末标点 > 空格 > 硬切 | 见 `17-分块策略` |
 | meta | `{page, headings}` | 页码支撑引用溯源跳转；headings 为章节路径 `list[str]`，仅 Markdown 来源 |
-| 表格 | 简单策略：整表保持单 chunk（超长截断） | 深度表格解析（表格转行描述）标注为进阶项 |
+| 表格 | 暂按普通文本递归切（换行级，不会拦腰截断） | 整表保留 / 按行组拆分列为后续（见 `17-分块策略` §17.7） |
 
 > [!warning] 已知坑
 > - **扫描版 PDF 无文字层** → 解析结果为空：检测后标记 `failed(扫描件，暂不支持OCR)`。OCR 进阶可选 tesseract/paddleocr。

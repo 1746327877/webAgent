@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Paperclip, Square } from "lucide-react";
+import { ArrowUp, Globe, Paperclip, Square } from "lucide-react";
 import AgentAvatar from "@/components/agents/AgentAvatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -43,6 +43,11 @@ interface Props {
   onModelChange?: (model: string | null) => void;
   /** 未选择模型时展示的智能体默认模型名 */
   defaultModelLabel?: string;
+  /** 后续消息是否启用联网搜索 */
+  webSearch?: boolean;
+  onWebSearchChange?: (enabled: boolean) => void;
+  /** 后端是否配置了联网搜索 MCP；未配置时按钮禁用 */
+  webSearchAvailable?: boolean;
 }
 
 const MENTION_TAIL = /@([^\s@]*)$/;
@@ -78,6 +83,9 @@ export default function Composer({
   modelOverride = null,
   onModelChange,
   defaultModelLabel = "默认模型",
+  webSearch = false,
+  onWebSearchChange,
+  webSearchAvailable = false,
 }: Props) {
   const [input, setInput] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -342,6 +350,18 @@ export default function Composer({
             defaultLabel={defaultModelLabel}
             onChange={(model) => onModelChange?.(model)}
           />
+          <Button
+            type="button"
+            variant={webSearch ? "default" : "outline"}
+            size="icon"
+            aria-label="联网搜索"
+            aria-pressed={webSearch}
+            title={webSearchAvailable ? "联网搜索（对随后发送的消息生效）" : "联网搜索未配置"}
+            disabled={!webSearchAvailable}
+            onClick={() => onWebSearchChange?.(!webSearch)}
+          >
+            <Globe />
+          </Button>
           <Button
             type="button"
             variant="outline"
