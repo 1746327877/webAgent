@@ -23,12 +23,55 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useUiStore } from "@/stores/ui";
 import { toast } from "@/stores/toast";
 
+/** 分组标题：多选模式下带"全选该组"复选框（部分选中显示 indeterminate）。 */
+function GroupHeader({
+  label,
+  ids,
+  selectable,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  label: string;
+  ids: string[];
+  selectable: boolean;
+  selected: Set<string>;
+  disabled: boolean;
+  onToggle: (checked: boolean) => void;
+}) {
+  const all = ids.length > 0 && ids.every((id) => selected.has(id));
+  const some = ids.some((id) => selected.has(id));
+  return (
+    <label
+      data-testid={`session-group-${label}`}
+      className="flex items-center gap-2 px-2 pt-3 pb-1 text-xs text-muted-foreground"
+    >
+      {selectable && (
+        <input
+          type="checkbox"
+          aria-label={`全选 ${label}`}
+          className="size-3.5 shrink-0 accent-primary"
+          checked={all}
+          ref={(el) => {
+            if (el) el.indeterminate = some && !all;
+          }}
+          disabled={disabled}
+          onChange={(e) => onToggle(e.target.checked)}
+        />
+      )}
+      <span>{label}</span>
+      <span>{ids.length}</span>
+    </label>
+  );
+}
+
 export default function SessionSidebar() {
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  // 多选模式：进入后每行显示复选框，底部出现"删除选中"
+  // 多选模式：分组标题的复选框可整组选中；删除确认就近显示在按钮旁（不用弹窗）
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirming, setConfirming] = useState(false);
   const theme = useUiStore((s) => s.theme);
   const toggleTheme = useUiStore((s) => s.toggleTheme);
   const thinkingDefaultOpen = useUiStore((s) => s.thinkingDefaultOpen);
@@ -54,9 +97,23 @@ export default function SessionSidebar() {
   function exitSelectMode() {
     setSelectMode(false);
     setSelected(new Set());
+    setConfirming(false);
+  }
+
+  function setIds(ids: string[], checked: boolean) {
+    setConfirming(false);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
   }
 
   function toggleSelected(id: string) {
+    setConfirming(false);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -65,15 +122,9 @@ export default function SessionSidebar() {
     });
   }
 
-  function toggleAll(checked: boolean) {
-    // 全选只覆盖"当前已加载"的会话（不含未加载分页），与设计一致
-    setSelected(checked ? new Set(items.map((s) => s.id)) : new Set());
-  }
-
-  async function onBulkDelete() {
+  async function runBulkDelete() {
     const ids = [...selected];
     if (ids.length === 0) return;
-    if (!window.confirm(`删除选中的 ${ids.length} 个会话？该操作不可恢复。`)) return;
     try {
       const res = await bulkDelete.mutateAsync(ids);
       toast.success(`已删除 ${res.deleted} 个会话`);
@@ -157,9 +208,6 @@ export default function SessionSidebar() {
     );
   }
 
-  const allLoadedSelected = items.length > 0 && items.every((s) => selected.has(s.id));
-  const someLoadedSelected = items.some((s) => selected.has(s.id));
-
   return (
     <aside className="flex w-72 shrink-0 flex-col border-r">
       <div className="space-y-2 p-3">
@@ -184,29 +232,32 @@ export default function SessionSidebar() {
         <Input placeholder="搜索会话…" maxLength={64} value={query} onChange={(e) => setQuery(e.target.value)} />
         {selectMode && (
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <label className="flex cursor-pointer items-center gap-1.5">
-              <input
-                type="checkbox"
-                aria-label="全选会话"
-                className="size-4 shrink-0 accent-primary"
-                checked={allLoadedSelected}
-                ref={(el) => {
-                  if (el) el.indeterminate = someLoadedSelected && !allLoadedSelected;
-                }}
-                disabled={bulkDelete.isPending || items.length === 0}
-                onChange={(e) => toggleAll(e.target.checked)}
-              />
-              全选（已加载 {items.length} 条）
-            </label>
             <span className="text-muted-foreground">已选 {selected.size}</span>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={selected.size === 0 || bulkDelete.isPending}
-              onClick={onBulkDelete}
-            >
-              {bulkDelete.isPending ? "删除中…" : "删除选中"}
-            </Button>
+            {confirming ? (
+              <>
+                <span className="text-red-500">删除 {selected.size} 条？不可恢复</span>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={bulkDelete.isPending}
+                  onClick={runBulkDelete}
+                >
+                  {bulkDelete.isPending ? "删除中…" : "确认删除"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+                  取消
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={selected.size === 0}
+                onClick={() => setConfirming(true)}
+              >
+                删除选中
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onClick={exitSelectMode}>
               退出
             </Button>
@@ -216,13 +267,27 @@ export default function SessionSidebar() {
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {pinnedItems.length > 0 && (
           <div>
-            <p className="px-2 pt-3 pb-1 text-xs text-muted-foreground">置顶</p>
+            <GroupHeader
+              label="置顶"
+              ids={pinnedItems.map((s) => s.id)}
+              selectable={selectMode}
+              selected={selected}
+              disabled={bulkDelete.isPending}
+              onToggle={(checked) => setIds(pinnedItems.map((s) => s.id), checked)}
+            />
             {pinnedItems.map(renderItem)}
           </div>
         )}
         {groups.map((g) => (
           <div key={g.label}>
-            <p className="px-2 pt-3 pb-1 text-xs text-muted-foreground">{g.label}</p>
+            <GroupHeader
+              label={g.label}
+              ids={g.items.map((s) => s.id)}
+              selectable={selectMode}
+              selected={selected}
+              disabled={bulkDelete.isPending}
+              onToggle={(checked) => setIds(g.items.map((s) => s.id), checked)}
+            />
             {g.items.map(renderItem)}
           </div>
         ))}

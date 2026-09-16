@@ -111,7 +111,7 @@ test("置顶项进入「置顶」分组且保持接口返回顺序", () => {
       <SessionSidebar />
     </MemoryRouter>,
   );
-  expect(screen.getByText("置顶", { selector: "p" })).toBeInTheDocument();
+  expect(screen.getByTestId("session-group-置顶")).toBeInTheDocument();
   const links = screen.getAllByRole("link").map((a) => a.textContent ?? "");
   expect(links[0]).toContain("置顶旧");
   expect(links[1]).toContain("置顶新");
@@ -153,14 +153,13 @@ test("切换主题按钮为根节点添加 dark class", () => {
   document.documentElement.classList.remove("dark");
 });
 
-test("多选模式：全选已加载会话并批量删除", async () => {
+test("多选模式：分组复选框整组选中，就近确认后批量删除", async () => {
   const items = [
     makeSession({ id: "s1", title: "会话一" }),
     makeSession({ id: "s2", title: "会话二" }),
   ];
   mocks.useSessions.mockReturnValue(queryResult(items));
   mocks.bulkDelete.mockResolvedValue({ deleted: 2 });
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(
     <MemoryRouter>
       <SessionSidebar />
@@ -170,17 +169,21 @@ test("多选模式：全选已加载会话并批量删除", async () => {
   fireEvent.click(screen.getByRole("button", { name: "多选" }));
   expect(screen.getByText("已选 0")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("checkbox", { name: "全选会话" }));
+  // 勾"今天"分组标题的复选框 → 整组选中
+  fireEvent.click(screen.getByRole("checkbox", { name: "全选 今天" }));
   expect(screen.getByText("已选 2")).toBeInTheDocument();
 
+  // 第一次点击只进入就近确认，不直接删除
   fireEvent.click(screen.getByRole("button", { name: "删除选中" }));
+  expect(screen.getByText("删除 2 条？不可恢复")).toBeInTheDocument();
+  expect(mocks.bulkDelete).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
   await waitFor(() => expect(mocks.bulkDelete).toHaveBeenCalledWith(["s1", "s2"]));
-  vi.restoreAllMocks();
 });
 
-test("多选模式：取消确认则不删除", () => {
+test("多选模式：就近确认里点取消则不删除", () => {
   mocks.useSessions.mockReturnValue(queryResult([makeSession({ id: "s1", title: "会话一" })]));
-  vi.spyOn(window, "confirm").mockReturnValue(false);
   render(
     <MemoryRouter>
       <SessionSidebar />
@@ -188,8 +191,9 @@ test("多选模式：取消确认则不删除", () => {
   );
 
   fireEvent.click(screen.getByRole("button", { name: "多选" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: "选择 会话一" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "全选 今天" }));
   fireEvent.click(screen.getByRole("button", { name: "删除选中" }));
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
   expect(mocks.bulkDelete).not.toHaveBeenCalled();
-  vi.restoreAllMocks();
+  expect(screen.queryByText(/不可恢复/)).not.toBeInTheDocument();
 });
