@@ -79,6 +79,69 @@ test("工具结果里的图片 URL 渲染为缩略图链接", () => {
   expect(screen.getByRole("link", { name: /图片/ }).tagName).toBe("A");
 });
 
+test("工具产出的图片直接展示，不藏在折叠区里", () => {
+  render(
+    <BlockRenderer
+      block={{
+        type: "tool_result",
+        id: "c1",
+        status: "ok",
+        preview: "二维码",
+        images: ["https://open.lkcoffee.com/transfer/qrcode?token=abc"],
+      }}
+    />,
+  );
+  // tool_result 默认折叠；图片要是用户真正要的结果，必须在折叠区之外
+  expect(screen.getByAltText("工具返回图片").closest("details")).toBeNull();
+});
+
+test("工具原文里的支付链接可点击（无需展开折叠区）", () => {
+  render(
+    <BlockRenderer
+      block={{
+        type: "tool_result",
+        id: "c1",
+        tool: "lk_pay",
+        status: "ok",
+        preview: "💳 支付方式\n点击支付链接：weixin://wxpay/bizpayurl?pr=abc\n或扫描二维码",
+      }}
+    />,
+  );
+  const link = screen.getByRole("link", { name: "weixin://wxpay/bizpayurl?pr=abc" });
+  expect(link).toHaveAttribute("href", "weixin://wxpay/bizpayurl?pr=abc");
+  // 自定义协议不加 target，直接交给系统协议处理器
+  expect(link).not.toHaveAttribute("target");
+});
+
+test("工具原文里的 http 链接在新标签页打开", () => {
+  render(
+    <BlockRenderer
+      block={{
+        type: "tool_result",
+        id: "c1",
+        status: "ok",
+        preview: "详见 https://example.com/doc",
+      }}
+    />,
+  );
+  const link = screen.getByRole("link", { name: "https://example.com/doc" });
+  expect(link).toHaveAttribute("target", "_blank");
+});
+
+test("工具原文里的危险 scheme 不会被点开", () => {
+  render(
+    <BlockRenderer
+      block={{
+        type: "tool_result",
+        id: "c1",
+        status: "ok",
+        preview: "javascript:alert(1) 与 file:///C:/secret",
+      }}
+    />,
+  );
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+});
+
 test("非白名单 scheme 的脏值不会被渲染成链接", () => {
   render(
     <BlockRenderer

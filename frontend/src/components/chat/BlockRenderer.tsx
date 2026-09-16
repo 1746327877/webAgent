@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Block } from "@/api/sessions";
 import MarkdownContent from "@/components/chat/MarkdownContent";
+import { isClickableUrl, isHttpUrl, splitByLinks } from "@/lib/linkify";
 import { useUiStore } from "@/stores/ui";
 
 export default function BlockRenderer({
@@ -71,13 +72,18 @@ export default function BlockRenderer({
     // <img src> 只认 http(s)：weixin:// 这类协议不是图片资源，放进去只会裂图
     const images = asHttpUrls(block.images);
     return (
-      <details className="my-1 rounded border px-3 py-2 text-xs">
-        <summary className="cursor-pointer text-muted-foreground">
-          {ok ? "✅" : "⚠️"} {block.tool ? `${String(block.tool)} · ` : ""}
-          {String(block.elapsed_ms ?? "")}ms
-          {!ok ? " · 失败" : ""}
-        </summary>
-        <p className="mt-1 whitespace-pre-wrap opacity-80">{String(block.preview ?? "")}</p>
+      <div className="my-1">
+        <details className="rounded border px-3 py-2 text-xs">
+          <summary className="cursor-pointer text-muted-foreground">
+            {ok ? "✅" : "⚠️"} {block.tool ? `${String(block.tool)} · ` : ""}
+            {String(block.elapsed_ms ?? "")}ms
+            {!ok ? " · 失败" : ""}
+          </summary>
+          <p className="mt-1 whitespace-pre-wrap opacity-80">
+            <LinkifiedText text={String(block.preview ?? "")} />
+          </p>
+        </details>
+        {/* 图片与链接是用户真正要的结果，放折叠区外直接可见，不必先「展开」 */}
         {images.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {images.map((url) => (
@@ -99,59 +105,75 @@ export default function BlockRenderer({
           </div>
         )}
         {links.length > 0 && (
-          <ul className="mt-2 space-y-0.5">
-            {links.map((url) =>
-              isHttpUrl(url) ? (
-                <li key={url} className="truncate">
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    title={`${url}（Ctrl/⌘+点击在新标签页打开）`}
-                    className="text-primary hover:underline"
-                  >
-                    🔗 {url}
-                  </a>
-                </li>
-              ) : (
-                // 自定义协议（weixin:// 等）不加 target：交给系统协议处理器唤起客户端，
-                // 加了反而可能先弹出一个空白标签页
-                <li key={url} className="truncate">
-                  <a
-                    href={url}
-                    title={`${url}（点击唤起对应客户端）`}
-                    className="text-primary hover:underline"
-                  >
-                    🔗 {url}
-                  </a>
-                </li>
-              ),
-            )}
+          <ul className="mt-1 space-y-0.5 text-xs">
+            {links.map((url) => (
+              <li key={url} className="truncate">
+                <ToolLink url={url} />
+              </li>
+            ))}
           </ul>
         )}
-      </details>
+      </div>
     );
   }
   return null; // citation 块由 MessageItem 统一渲染为 CitationList
 }
 
-/** 与后端 runtime._URL_SCHEME 保持一致的白名单（单一来源在后端，前端只做渲染前的防御） */
-const LINK_SCHEME_RE = /^(?:https?:\/\/|weixin:\/\/|alipays?:\/\/|tel:|mailto:)/i;
-
-function isHttpUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url);
+/** 单个可点击 URL：http(s) 走新标签页；自定义协议（weixin:// 等）交给系统唤起客户端 */
+function ToolLink({ url }: { url: string }) {
+  if (isHttpUrl(url)) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer noopener"
+        title={`${url}（Ctrl/⌘+点击在新标签页打开）`}
+        className="text-primary hover:underline"
+      >
+        🔗 {url}
+      </a>
+    );
+  }
+  // 自定义协议不加 target：加了可能先弹一个空白标签页再交给协议处理器
+  return (
+    <a href={url} title={`${url}（点击唤起对应客户端）`} className="text-primary hover:underline">
+      🔗 {url}
+    </a>
+  );
 }
 
-/** 只接受 http(s) URL，避免把脏数据/相对路径渲染成可点击链接（<img src> 用） */
+/** 纯文本里的 URL 也渲染成可点击链接：工具原文常直接写着「点击支付链接：weixin://…」 */
+function LinkifiedText({ text }: { text: string }) {
+  return (
+    <>
+      {splitByLinks(text).map((segment, index) =>
+        segment.kind === "link" ? (
+          <a
+            key={index}
+            href={segment.value}
+            {...(isHttpUrl(segment.value)
+              ? { target: "_blank", rel: "noreferrer noopener" }
+              : {})}
+            className="text-primary hover:underline"
+          >
+            {segment.value}
+          </a>
+        ) : (
+          <span key={index}>{segment.value}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+/** 只接受 http(s) URL，避免把脏数据/相对路径渲染成可点击链接（`<img src>` 用） */
 function asHttpUrls(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && isHttpUrl(item));
 }
 
-/** 工具结果里的链接：http(s) + 支付类自定义协议；javascript:/data: 等一律丢弃 */
+/** 工具结果里的链接：http(s) + 支付类自定义协议；白名单外的 scheme 一律丢弃 */
 function asLinkUrls(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(
-    (item): item is string => typeof item === "string" && LINK_SCHEME_RE.test(item),
-  );
+  return value.filter((item): item is string => typeof item === "string" && isClickableUrl(item));
 }

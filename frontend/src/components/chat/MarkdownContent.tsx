@@ -1,8 +1,13 @@
 import { useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
-import Markdown, { type Components, type ExtraProps } from "react-markdown";
+import Markdown, {
+  defaultUrlTransform,
+  type Components,
+  type ExtraProps,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import { linkifyCitations } from "@/lib/citations";
+import { autolinkBareUrls, isClickableUrl } from "@/lib/linkify";
 import { createHighlighterCoreSync } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
@@ -104,6 +109,14 @@ function PreBlock({ children, node: _node, ...props }: ComponentPropsWithoutRef<
 
 const CITATION_PREFIX = "#cite-";
 
+/**
+ * react-markdown 默认只放行 `https?|ircs?|mailto|xmpp`，会把 `weixin://` 这类支付链接
+ * 的 href 清成空字符串（表现为「点了没反应」）。白名单内的协议原样保留，其余仍交给默认清理。
+ */
+function keepClickableSchemes(url: string): string {
+  return isClickableUrl(url) ? url : defaultUrlTransform(url);
+}
+
 export default function MarkdownContent({
   content,
   maxRef = 0,
@@ -138,8 +151,13 @@ export default function MarkdownContent({
   };
   return (
     <div className="prose prose-sm max-w-none dark:prose-invert">
-      <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeShiki]} components={components}>
-        {linkifyCitations(content, maxRef)}
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeShiki]}
+        components={components}
+        urlTransform={keepClickableSchemes}
+      >
+        {autolinkBareUrls(linkifyCitations(content, maxRef))}
       </Markdown>
     </div>
   );
