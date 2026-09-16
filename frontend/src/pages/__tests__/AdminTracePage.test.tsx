@@ -81,6 +81,12 @@ test("渲染 waterfall 条与工具日志表", async () => {
   expect(screen.getByText("kb_search")).toBeInTheDocument();
 });
 
+test("左上角「←」可直接返回该会话的对话", async () => {
+  renderPage();
+  const back = await screen.findByRole("link", { name: "返回对话" });
+  expect(back).toHaveAttribute("href", "/sessions/s1");
+});
+
 test("点击 span 打开 JSON 抽屉", async () => {
   renderPage();
   await userEvent.click(await screen.findByLabelText("span-tool"));

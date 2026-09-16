@@ -142,7 +142,16 @@ function SpanDrawer({ span, onClose }: { span: SpanItem; onClose: () => void }) 
 }
 
 /** 会话调用链：消息列表 + waterfall + 工具日志 + span 抽屉。可嵌在可观测性标签页，也可独立路由使用。 */
-export default function TraceView({ sessionId }: { sessionId: string | undefined }) {
+export default function TraceView({
+  sessionId,
+  backTo,
+  backLabel,
+}: {
+  sessionId: string | undefined;
+  /** 传入则显示左侧「←」返回箭头（独立路由用）；嵌入标签页时不传 */
+  backTo?: string;
+  backLabel?: string;
+}) {
   const { data: messages, isLoading: messagesLoading } = useMessages(sessionId);
   const assistantMessages = useMemo(
     () => (messages ?? []).filter((message) => message.role === "assistant"),
@@ -202,14 +211,31 @@ export default function TraceView({ sessionId }: { sessionId: string | undefined
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-        <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
-          <div className="min-w-0">
-            <h1 className="text-sm font-semibold">🔍 会话调用链</h1>
+        <div className="flex items-center gap-2 border-b px-4 py-2">
+          {backTo && (
+            <Link
+              to={backTo}
+              className="shrink-0 text-lg leading-none text-muted-foreground hover:text-foreground"
+              title={backLabel ?? "返回对话"}
+              aria-label={backLabel ?? "返回对话"}
+            >
+              ←
+            </Link>
+          )}
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-semibold">
+              {backTo ? backLabel : "🔍 会话调用链"}
+            </h1>
             <p className="truncate text-xs text-muted-foreground">会话 {sessionId ?? "-"}</p>
           </div>
-          <Link to="/admin" className="shrink-0 text-xs text-muted-foreground hover:underline">
-            ← 返回仪表盘
-          </Link>
+          {!backTo && (
+            <Link
+              to="/admin"
+              className="shrink-0 text-xs text-muted-foreground hover:underline"
+            >
+              返回仪表盘
+            </Link>
+          )}
         </div>
 
         {traceLoading && <p className="p-4 text-sm text-muted-foreground">加载中…</p>}

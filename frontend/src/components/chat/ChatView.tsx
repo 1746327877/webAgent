@@ -57,7 +57,7 @@ export default function ChatView() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createSession = useCreateSession();
-  const { data: messages = [] } = useMessages(sessionId);
+  const { data: messages = [], isLoading: messagesLoading } = useMessages(sessionId);
   const { data: session } = useSession(sessionId);
   const { data: agent } = useAgent(session?.agent_id ?? undefined);
   const { data: agents = [] } = useAgents();
@@ -155,6 +155,8 @@ export default function ChatView() {
         status?: string;
         elapsed_ms?: number;
         preview?: string;
+        links?: string[];
+        images?: string[];
       };
       const event: ToolEvent =
         evt.event === "tool_call"
@@ -165,6 +167,8 @@ export default function ChatView() {
               status: data.status,
               elapsed_ms: data.elapsed_ms,
               preview: data.preview,
+              links: data.links,
+              images: data.images,
             };
       appendToolEvent(event, data.message_id);
     } else if (evt.event === "error") {
@@ -479,6 +483,9 @@ export default function ChatView() {
               </div>
             )}
           </div>
+        ) : messagesLoading && !streamingMessage && !showPending ? (
+          // 等历史消息加载完再挂载列表：否则会先渲染顶部、再跳到底部，观感割裂
+          <p className="flex-1 p-4 text-sm text-muted-foreground">加载中…</p>
         ) : (
           <MessageList
             items={items}

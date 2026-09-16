@@ -50,9 +50,14 @@ export default function MessageList({
     <Virtuoso
       ref={virtuosoRef}
       data={items}
-      followOutput="smooth"
+      // 'auto'（即时）而非 'smooth'：流式高频追加时动画追不上，反而显得割裂
+      followOutput="auto"
+      // 内容不足一屏时贴底显示，短会话不会悬在顶部
+      alignToBottom
       // 首屏就按最后一条起算，减少跳到最底前的"从顶部闪一下"
       initialTopMostItemIndex={Math.max(items.length - 1, 0)}
+      // 预渲染视口外内容，减少流式/思考链折叠引起的测量抖动
+      increaseViewportBy={400}
       computeItemKey={(_, m) => m.id}
       className="min-h-0 flex-1"
       itemContent={(_, m) => (
