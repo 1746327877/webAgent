@@ -36,6 +36,8 @@ function toCitation(block: Block): Citation {
     page: page == null ? null : Number(page),
     score: Number(block.score ?? 0),
     snippet: String(block.snippet ?? ""),
+    // block 来自后端 JSON（Block 带索引签名，headings 为 unknown）：非数组（含历史消息缺失）一律兜底为空数组
+    headings: Array.isArray(block.headings) ? block.headings.map((h) => String(h)) : [],
   };
 }
 

@@ -7,6 +7,8 @@ export interface Citation {
   page: number | null;
   score: number;
   snippet: string;
+  /** 章节路径，来自后端 chunk.meta.headings；历史消息可能缺省 */
+  headings?: string[];
 }
 
 function replaceRefs(text: string, maxRef: number): string {

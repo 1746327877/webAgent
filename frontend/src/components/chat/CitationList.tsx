@@ -23,7 +23,8 @@ export default function CitationList({
               onClick={() => onOpen?.(c)}
             >
               [{c.ref}] {c.source}
-              {c.page != null ? ` · p${c.page}` : ""}（{c.score.toFixed(2)}）
+              {c.page != null ? ` · p${c.page}` : ""}
+              {c.headings?.length ? ` · ${c.headings.join(" › ")}` : ""}（{c.score.toFixed(2)}）
             </button>
           </li>
         ))}

@@ -129,6 +129,29 @@ test("工具图片只保留 http(s) 且去重", () => {
   expect(screen.getByAltText("工具返回图片")).toHaveAttribute("src", "https://a.com/q.png");
 });
 
+test("引用卡片展示章节路径", () => {
+  render(
+    <MessageItem
+      message={makeMessage({
+        blocks: [
+          { type: "text", content: "回答 [1]" },
+          {
+            type: "citation",
+            ref: 1,
+            chunk_id: "c1",
+            source: "java.md",
+            page: 12,
+            score: 0.8,
+            snippet: "片段",
+            headings: ["第3章", "3.1 核心参数"],
+          },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByText(/第3章 › 3\.1 核心参数/)).toBeInTheDocument();
+});
+
 test("回复正文里已经写出的图片不重复展示", () => {
   const url = "https://a.com/q.png";
   render(
