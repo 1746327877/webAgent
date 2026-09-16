@@ -190,3 +190,9 @@ class OllamaProvider(ModelProvider):
             return ProviderHealth(ok=r.status_code == 200, base_url=self.base_url)
         except httpx.HTTPError:
             return ProviderHealth(ok=False, base_url=self.base_url)
+
+    async def capabilities(self, model: str) -> list[str]:
+        """Ollama /api/show 的 capabilities，例如 ["completion", "tools", "thinking"]。"""
+        r = await self._client.post("/api/show", json={"model": model}, timeout=15.0)
+        r.raise_for_status()
+        return [str(cap) for cap in (r.json().get("capabilities") or [])]

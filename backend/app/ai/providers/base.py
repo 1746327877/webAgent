@@ -69,3 +69,7 @@ class ModelProvider(ABC):
 
     @abstractmethod
     async def health(self) -> ProviderHealth: ...
+
+    async def capabilities(self, model: str) -> list[str]:
+        """模型能力（如 tools/thinking）；默认未知，子类按需实现。"""
+        return []

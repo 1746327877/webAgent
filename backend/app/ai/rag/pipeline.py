@@ -78,11 +78,12 @@ async def run_ingest(
                 path = base / stored
                 if not path.exists():
                     raise FileNotFoundError("上传文件丢失")
-                from app.ai.rag.parsers import extract_text
+                from app.ai.rag.document_parser import extract_pages
                 from app.ai.rag.splitter import split_text
 
                 # 解析/切片/jieba 都是同步重活，挪到线程池避免阻塞事件循环
-                pages = await asyncio.to_thread(extract_text, path, doc.file_type)
+                # PDF/DOCX 优先走 MinerU（含 OCR），失败自动回退内置解析
+                pages = await asyncio.to_thread(extract_pages, path, doc.file_type)
                 meta_pages = doc.meta or {}
                 await _set_status(db, doc, "chunking")
 

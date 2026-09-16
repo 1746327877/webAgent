@@ -57,6 +57,8 @@ class AgentOut(BaseModel):
     current_version: int
     variables: list[str] = []
     tool_slugs: list[str] = []
+    skill_slugs: list[str] = []
+    mcp_tools: list[dict] = []
     kb_bindings: list[dict] = []
     created_at: datetime
     updated_at: datetime
@@ -64,6 +66,19 @@ class AgentOut(BaseModel):
 
 class ToolsIn(BaseModel):
     slugs: list[str] = []
+
+
+class SkillsIn(BaseModel):
+    slugs: list[str] = []
+
+
+class McpToolBindingIn(BaseModel):
+    mcp_server_id: uuid.UUID
+    tool_name: str = Field(min_length=1, max_length=128)
+
+
+class McpToolsIn(BaseModel):
+    tools: list[McpToolBindingIn] = []
 
 
 class KbBindingIn(BaseModel):

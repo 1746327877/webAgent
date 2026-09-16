@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import logging
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -12,6 +13,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.agent_config import EffectiveConfig, build_agent_config, resolve_effective_config
+from app.ai.mcp_tools import build_mcp_tools
 from app.ai.model_manager import ModelManager
 from app.ai.providers.base import ChatRequest, ModelProvider
 from app.ai.tools.registry import tools_payload
@@ -29,6 +31,8 @@ TOOL_PREVIEW_LEN = 200
 MAX_DOCUMENT_CONTEXT_CHARS = 8000
 CANCEL_FLAGS: dict[uuid.UUID, bool] = {}
 CANCEL_SESSIONS: set[uuid.UUID] = set()  # 会话级停止标记，供排队中的接力回合消费
+
+logger = logging.getLogger("app.runtime")
 
 Embedder = Callable[[list[str]], Awaitable[list[list[float]]]]
 
@@ -49,11 +53,13 @@ async def _execute_tool(
     embedder: Embedder | None = None,
     span_buffer=None,
     user_id: uuid.UUID | None = None,
+    mcp_tools: dict | None = None,
 ) -> tuple[str, str]:
     from app.ai.tools.registry import get_tool
 
+    is_mcp = bool(mcp_tools and name in mcp_tools)
     item = get_tool(name)
-    if item is None:
+    if item is None and not is_mcp:
         return f"未知工具：{name}", "error"
     try:
         # Ollama function.arguments 为 JSON 对象（dict）；兼容字符串脚本与空参
@@ -61,6 +67,12 @@ async def _execute_tool(
             parsed = args
         else:
             parsed = json.loads(args) if args else {}
+        # MCP 工具：按绑定还原到真实 server 配置与 tool 名
+        if is_mcp:
+            from app.services import mcp_service
+
+            entry = mcp_tools[name]
+            return await mcp_service.call_tool(entry["config"], entry["tool_name"], parsed)
         # kb_search 在 runtime 层拦截为真实检索（使用智能体绑定的 KB）
         if name == "kb_search" and agent_id is not None and db is not None:
             query = str(parsed.get("query", "")).strip()
@@ -93,6 +105,7 @@ async def _execute_tool(
         result = await asyncio.wait_for(item.handler(**parsed), timeout=TOOL_TIMEOUT_S)
         return str(result), "ok"
     except Exception as exc:  # noqa: BLE001 —— 工具失败转为错误结果回填，不中断生成
+        logger.warning("工具执行失败 tool=%s error=%s", name, exc)
         return f"工具执行失败：{exc}", "error"
 
 
@@ -554,12 +567,20 @@ async def run_generation(
                 },
             )
 
+        # 内置工具 + 绑定的 MCP 工具（命名 mcp__{server}__{tool}），MCP 调用经 mcp_map 还原
+        mcp_tool_payload, mcp_map = build_mcp_tools(cfg.mcp_bindings)
+        all_tools = tools_payload(cfg.tool_slugs) + mcp_tool_payload
+
+        def _tool_label(tool_name: str) -> str:
+            entry = mcp_map.get(tool_name)
+            return str(entry["label"]) if entry else tool_name
+
         cancelled = False
         for _ in range(MAX_TOOL_ROUNDS):
             req = ChatRequest(
                 model=cfg.model,
                 messages=messages,
-                tools=tools_payload(cfg.tool_slugs) or None,
+                tools=all_tools or None,
                 temperature=cfg.temperature,
                 top_p=cfg.top_p,
                 max_tokens=cfg.max_tokens,
@@ -636,6 +657,7 @@ async def run_generation(
                 raise
             except Exception as exc:  # 记录 llm span 后交给外层统一转 SSE error
                 round_status, round_error = "error", str(exc)[:300]
+                logger.warning("模型流式出错 session=%s error=%s", session.id, exc)
                 raise
             finally:
                 round_span_id = spans.add(
@@ -660,7 +682,7 @@ async def run_generation(
                     {
                         "type": "tool_call",
                         "id": call["id"],
-                        "tool": call["name"],
+                        "tool": _tool_label(call["name"]),
                         "args": call["args"],
                     }
                 )
@@ -669,7 +691,7 @@ async def run_generation(
                     {
                         "message_id": str(assistant_id),
                         "id": call["id"],
-                        "name": call["name"],
+                        "name": _tool_label(call["name"]),
                         "args": call["args"],
                     },
                 )
@@ -707,11 +729,12 @@ async def run_generation(
                     embedder=embedder,
                     span_buffer=spans,
                     user_id=session.user_id,
+                    mcp_tools=mcp_map,
                 )
                 elapsed = round((time.monotonic() - started) * 1000)
                 spans.add(
                     type="tool",
-                    name=call["name"],
+                    name=_tool_label(call["name"]),
                     status=tool_status,
                     parent_span_id=round_span_id,
                     input={"args": call.get("args")},
@@ -725,7 +748,7 @@ async def run_generation(
                     {
                         "type": "tool_result",
                         "id": call["id"],
-                        "tool": call["name"],
+                        "tool": _tool_label(call["name"]),
                         "status": tool_status,
                         "elapsed_ms": elapsed,
                         "preview": preview,
@@ -752,9 +775,10 @@ async def run_generation(
     except GeneratorExit:
         await _finalize(db, assistant_id, session.id, blocks, "stopped", usage, None, spans=spans)
         raise
-    except Exception as exc:  # noqa: BLE001 —— 边界处转 SSE error
+    except Exception as exc:
         status = "error"
         error_text = str(exc)[:MAX_ERROR_LEN]
+        logger.exception("对话生成失败 session=%s", session.id)
         yield sse("error", {"message_id": str(assistant_id), "message": "生成失败，请重试"})
     finally:
         if thinking_started is not None and blocks and blocks[-1]["type"] == "thinking":

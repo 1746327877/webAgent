@@ -95,3 +95,44 @@ async def test_get_session_and_query_bounds(client, auth_headers):
 
     assert (await client.get("/api/v1/sessions?limit=0", headers=auth_headers)).status_code == 422
     assert (await client.get("/api/v1/sessions?limit=201", headers=auth_headers)).status_code == 422
+
+
+async def test_bulk_delete_removes_selected_and_ignores_other_users(client, auth_headers):
+    ids = [
+        (await client.post("/api/v1/sessions", json={}, headers=auth_headers)).json()["id"]
+        for _ in range(3)
+    ]
+    bob = await make_user(client, "bob")
+    theirs = (await client.post("/api/v1/sessions", json={}, headers=bob)).json()["id"]
+
+    r = await client.post(
+        "/api/v1/sessions/bulk-delete",
+        json={"ids": [ids[0], ids[1], theirs]},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    # 他人的 id 被忽略，只删掉自己的两条
+    assert r.json()["deleted"] == 2
+
+    mine = (await client.get("/api/v1/sessions", headers=auth_headers)).json()
+    assert [s["id"] for s in mine["items"]] == [ids[2]]
+    bob_list = (await client.get("/api/v1/sessions", headers=bob)).json()
+    assert [s["id"] for s in bob_list["items"]] == [theirs]
+
+
+async def test_bulk_delete_cascades_messages(client, auth_headers):
+    sid = (
+        await client.post("/api/v1/sessions", json={"title": "待删"}, headers=auth_headers)
+    ).json()["id"]
+    r = await client.post(
+        "/api/v1/sessions/bulk-delete", json={"ids": [sid]}, headers=auth_headers
+    )
+    assert r.json()["deleted"] == 1
+    assert (await client.get(f"/api/v1/sessions/{sid}", headers=auth_headers)).status_code == 404
+
+
+async def test_bulk_delete_empty_ids_rejected(client, auth_headers):
+    r = await client.post(
+        "/api/v1/sessions/bulk-delete", json={"ids": []}, headers=auth_headers
+    )
+    assert r.status_code == 422

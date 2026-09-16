@@ -22,6 +22,7 @@ class ToolOut(BaseModel):
     description: str
     category: str
     is_system: bool
+    input_schema: dict = {}
 
 
 @router.get("", response_model=list[ToolOut])
@@ -38,6 +39,7 @@ async def list_tools(
             description=r.description,
             category=r.category,
             is_system=r.is_system,
+            input_schema=r.input_schema or {},
         )
         for r in rows
     ]

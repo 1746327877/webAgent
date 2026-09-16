@@ -82,7 +82,7 @@ async def test_document_upload_kind_and_extraction_injection(client, auth_header
     s = (await client.post("/api/v1/sessions", json={"agent_id": agent_id}, headers=auth_headers)).json()
     await client.patch(f"/api/v1/sessions/{s['id']}", json={"title": "t"}, headers=auth_headers)
 
-    body = "# 会议纪要\n决定采用 FastAPI。".encode("utf-8")
+    body = "# 会议纪要\n决定采用 FastAPI。".encode()
     r = await client.post(
         f"/api/v1/sessions/{s['id']}/attachments",
         files={"file": ("notes.md", io.BytesIO(body), "text/markdown")},

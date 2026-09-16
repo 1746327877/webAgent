@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import Agent
@@ -71,6 +71,19 @@ async def update_session(db: AsyncSession, session: Session, fields: dict) -> Se
 async def delete_session(db: AsyncSession, session: Session) -> None:
     await db.delete(session)
     await db.commit()
+
+
+async def delete_sessions(db: AsyncSession, user: User, ids: list[uuid.UUID]) -> int:
+    """批量删除当前用户拥有的会话，返回实际删除条数。
+
+    他人或已不存在的 id 一律忽略（不报错），避免批量操作因个别脏 id 整体失败；
+    级联删除 messages/attachments/spans 由 FK ondelete=CASCADE 保证。
+    """
+    result = await db.execute(
+        delete(Session).where(Session.user_id == user.id, Session.id.in_(ids))
+    )
+    await db.commit()
+    return int(result.rowcount or 0)
 
 
 async def list_messages(db: AsyncSession, session: Session) -> list[Message]:

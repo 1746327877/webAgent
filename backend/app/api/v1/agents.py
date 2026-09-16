@@ -13,8 +13,10 @@ from app.schemas.agent import (
     AgentUpdateIn,
     AgentVersionOut,
     KbsIn,
+    McpToolsIn,
     PublishOut,
     RollbackIn,
+    SkillsIn,
     ToolsIn,
 )
 from app.services import agent_service
@@ -26,6 +28,8 @@ async def _to_out(db: AsyncSession, agent) -> AgentOut:
     out = AgentOut.model_validate(agent)
     out.variables = agent_service.extract_variables(agent.system_prompt)
     out.tool_slugs = await agent_service._tool_slugs(db, agent.id)
+    out.skill_slugs = await agent_service._skill_slugs(db, agent.id)
+    out.mcp_tools = await agent_service.list_mcp_tools(db, agent.id)
     out.kb_bindings = await agent_service.list_kb_bindings(db, agent.id)
     return out
 
@@ -78,6 +82,30 @@ async def set_tools(
     agent = await agent_service.get_owned_agent(db, user, aid)
     bound = await agent_service.set_tools(db, agent, body.slugs)
     return {"slugs": bound}
+
+
+@router.put("/{aid}/skills")
+async def set_skills(
+    aid: uuid.UUID,
+    body: SkillsIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    agent = await agent_service.get_owned_agent(db, user, aid)
+    bound = await agent_service.set_skills(db, agent, body.slugs)
+    return {"slugs": bound}
+
+
+@router.put("/{aid}/mcp-tools")
+async def set_mcp_tools(
+    aid: uuid.UUID,
+    body: McpToolsIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    agent = await agent_service.get_owned_agent(db, user, aid)
+    bound = await agent_service.set_mcp_tools(db, agent, user, body.tools)
+    return {"tools": bound}
 
 
 @router.put("/{aid}/kbs")

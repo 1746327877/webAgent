@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     vram_poll_seconds: int = 10
     attachment_orphan_hours: int = 24
     attachment_gc_interval_seconds: int = 3600
+    log_level: str = "INFO"
+    # MinerU 文档解析服务（宿主机独立进程）；为空表示不启用，回退内置解析
+    mineru_api_url: str = ""
+    mineru_timeout_s: float = 300.0
+    # MinerU 解析后端：pipeline 支持纯 CPU；hybrid/vlm 需要 CUDA（默认 hybrid 会报 CUDA is not available）
+    mineru_backend: str = "pipeline"
 
 
 settings = Settings()

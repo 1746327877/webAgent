@@ -5,12 +5,16 @@ from fastapi import HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.skills import SKILL_REGISTRY
 from app.models import (
     Agent,
     AgentKB,
+    AgentMcpTool,
+    AgentSkill,
     AgentTool,
     AgentVersion,
     KnowledgeBase,
+    McpServer,
     Message,
     Session,
     Tool,
@@ -109,6 +113,78 @@ async def set_tools(db: AsyncSession, agent: Agent, slugs: list[str]) -> list[st
     return bound
 
 
+async def _skill_slugs(db: AsyncSession, agent_id) -> list[str]:
+    rows = (
+        await db.scalars(
+            select(AgentSkill.skill_slug)
+            .where(AgentSkill.agent_id == agent_id)
+            .order_by(AgentSkill.skill_slug)
+        )
+    ).all()
+    return list(rows)
+
+
+async def set_skills(db: AsyncSession, agent: Agent, slugs: list[str]) -> list[str]:
+    slugs = list(dict.fromkeys(slugs))
+    unknown = [slug for slug in slugs if slug not in SKILL_REGISTRY]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"未知的 Skill：{', '.join(unknown)}")
+    await db.execute(delete(AgentSkill).where(AgentSkill.agent_id == agent.id))
+    for slug in slugs:
+        db.add(AgentSkill(agent_id=agent.id, skill_slug=slug))
+    await db.commit()
+    return sorted(slugs)
+
+
+async def list_mcp_tools(db: AsyncSession, agent_id) -> list[dict]:
+    rows = (
+        await db.execute(
+            select(AgentMcpTool.mcp_server_id, AgentMcpTool.tool_name)
+            .where(AgentMcpTool.agent_id == agent_id)
+            .order_by(AgentMcpTool.mcp_server_id, AgentMcpTool.tool_name)
+        )
+    ).all()
+    return [
+        {"mcp_server_id": str(row.mcp_server_id), "tool_name": row.tool_name} for row in rows
+    ]
+
+
+async def set_mcp_tools(db: AsyncSession, agent: Agent, user: User, bindings: list) -> list[dict]:
+    """替换语义：校验 server 归属与 tool 名在缓存列表中，再整体替换。"""
+    seen: list[tuple[uuid.UUID, str]] = []
+    for binding in bindings:
+        key = (binding.mcp_server_id, binding.tool_name)
+        if key not in seen:
+            seen.append(key)
+    server_ids = {server_id for server_id, _ in seen}
+    if server_ids:
+        owned = set(
+            (
+                await db.scalars(
+                    select(McpServer.id).where(
+                        McpServer.id.in_(server_ids), McpServer.user_id == user.id
+                    )
+                )
+            ).all()
+        )
+        missing = server_ids - owned
+        if missing:
+            raise HTTPException(status_code=404, detail="MCP 不存在")
+    for server_id, tool_name in seen:
+        server = await db.get(McpServer, server_id)
+        cached = {str(t.get("name")) for t in (server.tools or [])}
+        if tool_name not in cached:
+            raise HTTPException(
+                status_code=400,
+                detail=f"MCP「{server.name}」没有工具 {tool_name}，请先测试连接刷新工具列表",
+            )
+    await db.execute(delete(AgentMcpTool).where(AgentMcpTool.agent_id == agent.id))
+    for server_id, tool_name in seen:
+        db.add(AgentMcpTool(agent_id=agent.id, mcp_server_id=server_id, tool_name=tool_name))
+    await db.commit()
+    return await list_mcp_tools(db, agent.id)
+
+
 async def set_kbs(db: AsyncSession, agent: Agent, user: User, bindings: list) -> list[AgentKB]:
     """替换语义：先校验全部 KB 归属，再删除旧绑定并写入新绑定。"""
     bindings = list({b.kb_id: b for b in bindings}.values())  # 保序去重
@@ -156,7 +232,12 @@ async def list_kb_bindings(db: AsyncSession, agent_id) -> list[dict]:
     ]
 
 
-def _snapshot(agent: Agent, tool_slugs: list[str]) -> dict:
+def _snapshot(
+    agent: Agent,
+    tool_slugs: list[str],
+    skill_slugs: list[str],
+    mcp_tools: list[dict],
+) -> dict:
     return {
         "name": agent.name,
         "emoji": agent.emoji,
@@ -167,11 +248,15 @@ def _snapshot(agent: Agent, tool_slugs: list[str]) -> dict:
         "welcome_msg": agent.welcome_msg,
         "examples": agent.examples,
         "tool_slugs": tool_slugs,
+        "skill_slugs": skill_slugs,
+        "mcp_tools": mcp_tools,
     }
 
 
 async def publish_agent(db: AsyncSession, agent: Agent, user: User) -> AgentVersion:
     slugs = await _tool_slugs(db, agent.id)
+    skill_slugs = await _skill_slugs(db, agent.id)
+    mcp_tools = await list_mcp_tools(db, agent.id)
     max_version = await db.scalar(
         select(func.max(AgentVersion.version)).where(AgentVersion.agent_id == agent.id)
     )
@@ -179,7 +264,7 @@ async def publish_agent(db: AsyncSession, agent: Agent, user: User) -> AgentVers
     row = AgentVersion(
         agent_id=agent.id,
         version=version,
-        snapshot=_snapshot(agent, slugs),
+        snapshot=_snapshot(agent, slugs, skill_slugs, mcp_tools),
         published_by=user.id,
     )
     agent.current_version = version
@@ -229,6 +314,27 @@ async def rollback_agent(db: AsyncSession, agent: Agent, version: int) -> Agent:
         tool = await db.scalar(select(Tool).where(Tool.slug == slug, Tool.enabled.is_(True)))
         if tool is not None:
             db.add(AgentTool(agent_id=agent.id, tool_id=tool.id))
+    # 扩展能力（skill / mcp）一并回滚；未知 skill 与已删除的 MCP 工具自动跳过
+    await db.execute(delete(AgentSkill).where(AgentSkill.agent_id == agent.id))
+    for slug in snap.get("skill_slugs", []):
+        if slug in SKILL_REGISTRY:
+            db.add(AgentSkill(agent_id=agent.id, skill_slug=slug))
+    await db.execute(delete(AgentMcpTool).where(AgentMcpTool.agent_id == agent.id))
+    for item in snap.get("mcp_tools", []):
+        try:
+            server_id = uuid.UUID(str(item.get("mcp_server_id")))
+        except (TypeError, ValueError):
+            continue
+        server = await db.get(McpServer, server_id)
+        if server is None or server.user_id != agent.owner_id:
+            continue
+        db.add(
+            AgentMcpTool(
+                agent_id=agent.id,
+                mcp_server_id=server_id,
+                tool_name=str(item.get("tool_name") or ""),
+            )
+        )
     await db.commit()
     await db.refresh(agent)
     return agent

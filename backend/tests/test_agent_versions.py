@@ -29,7 +29,7 @@ async def test_publish_creates_incrementing_versions(client, auth_headers):
     versions = await client.get(f"/api/v1/agents/{aid}/versions", headers=auth_headers)
     assert [v["version"] for v in versions.json()] == [2, 1]
     assert versions.json()[1]["snapshot"]["name"] == "A"
-    # 快照字段齐全（含 tool_slugs）
+    # 快照字段齐全（含 tool_slugs / skill_slugs / mcp_tools）
     assert set(versions.json()[1]["snapshot"]) == {
         "name",
         "emoji",
@@ -40,6 +40,8 @@ async def test_publish_creates_incrementing_versions(client, auth_headers):
         "welcome_msg",
         "examples",
         "tool_slugs",
+        "skill_slugs",
+        "mcp_tools",
     }
     assert versions.json()[1]["snapshot"]["tool_slugs"] == []
 

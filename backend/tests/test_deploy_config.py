@@ -12,6 +12,16 @@ def test_compose_declares_full_stack():
     assert "8080:80" in text
 
 
+def test_compose_declares_web_search_and_mineru():
+    text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    # 联网搜索 MCP 服务与可配置宿主端口（默认 3300，避开 Windows 保留段）
+    assert "web-search:" in text
+    assert "ghcr.io/aas-ee/open-web-search" in text
+    assert "WEB_SEARCH_PORT" in text
+    # MinerU 走宿主机服务，通过环境变量启用（留空则回退内置解析）
+    assert "MINERU_API_URL" in text
+
+
 def test_nginx_proxies_api_and_disables_buffering():
     text = (ROOT / "frontend" / "nginx.conf").read_text(encoding="utf-8")
     assert "proxy_buffering off" in text

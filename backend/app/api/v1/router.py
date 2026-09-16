@@ -5,8 +5,10 @@ from app.api.v1 import (
     agents,
     attachments,
     auth,
+    capabilities,
     kbs,
     keys,
+    mcp_servers,
     messages,
     model_admin,
     models,
@@ -19,6 +21,8 @@ api_router.include_router(auth.router)
 api_router.include_router(sessions.router)
 api_router.include_router(messages.router)
 api_router.include_router(tools.router)
+api_router.include_router(capabilities.router)
+api_router.include_router(mcp_servers.router)
 api_router.include_router(agents.router)
 api_router.include_router(models.router)
 api_router.include_router(model_admin.router)

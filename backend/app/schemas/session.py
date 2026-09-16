@@ -15,6 +15,12 @@ class SessionPatchIn(BaseModel):
     archived: bool | None = None
 
 
+class SessionBulkDeleteIn(BaseModel):
+    """批量删除：上限 500 条，避免一次请求传过大的 id 列表。"""
+
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+
+
 class SessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

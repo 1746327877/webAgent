@@ -20,6 +20,7 @@ from app.models.session import Attachment, Message, Session
 from app.models.user import User
 from app.schemas.session import (
     MessageOut,
+    SessionBulkDeleteIn,
     SessionCreateIn,
     SessionListOut,
     SessionOut,
@@ -80,6 +81,17 @@ async def delete_session(
 ):
     session = await session_service.get_owned_session(db, user, sid)
     await session_service.delete_session(db, session)
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_sessions(
+    body: SessionBulkDeleteIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """多选删除：只删当前用户拥有的会话，返回实际删除条数。"""
+    deleted = await session_service.delete_sessions(db, user, body.ids)
+    return {"deleted": deleted}
 
 
 @router.get("/{sid}/messages", response_model=list[MessageOut])
