@@ -3,20 +3,17 @@
     {
       "question": "向量检索常用的距离度量有哪几种？",
       "expect_sources": ["vector-search.md"],
-      "expect_substrings": ["余弦相似度"],
-      "note": "表格所在小节：距离度量"
+      "expect_substrings": ["余弦相似度"]
     },
     {
       "question": "余弦相似度的特点是什么？",
       "expect_sources": ["vector-search.md"],
-      "expect_substrings": ["只看方向"],
-      "note": "命中表格单元格"
+      "expect_substrings": ["只看方向"]
     },
     {
       "question": "内积计算有什么前提？",
       "expect_sources": ["vector-search.md"],
-      "expect_substrings": ["归一化"],
-      "note": "命中表格单元格"
+      "expect_substrings": ["归一化"]
     },
     {
       "question": "欧氏距离越小越像吗？",
@@ -24,9 +21,19 @@
       "expect_substrings": ["越小越像"]
     },
     {
+      "question": "欧氏距离对什么敏感？",
+      "expect_sources": ["vector-search.md"],
+      "expect_substrings": ["量纲"]
+    },
+    {
       "question": "HNSW 是怎么加速最近邻搜索的？",
       "expect_sources": ["vector-search.md"],
       "expect_substrings": ["分层图"]
+    },
+    {
+      "question": "HNSW 的上层和底层分别负责什么？",
+      "expect_sources": ["vector-search.md"],
+      "expect_substrings": ["跳转"]
     },
     {
       "question": "为什么纯向量检索对型号和编号不敏感？",
@@ -49,6 +56,11 @@
       "expect_substrings": ["2 倍"]
     },
     {
+      "question": "核心线程数一般设成多少？",
+      "expect_sources": ["thread-pool.md"],
+      "expect_substrings": ["CPU 核数"]
+    },
+    {
       "question": "keepAliveTime 的常见取值是多少秒？",
       "expect_sources": ["thread-pool.md"],
       "expect_substrings": ["60"]
@@ -57,6 +69,11 @@
       "question": "线程池默认的拒绝策略是什么？",
       "expect_sources": ["thread-pool.md"],
       "expect_substrings": ["AbortPolicy"]
+    },
+    {
+      "question": "拒绝策略除了抛异常还能怎么处理？",
+      "expect_sources": ["thread-pool.md"],
+      "expect_substrings": ["调用方执行"]
     },
     {
       "question": "workQueue 应该优先选哪种队列？",
@@ -81,13 +98,22 @@
     {
       "question": "BM25 的词频部分为什么要做饱和？",
       "expect_sources": ["bm25.md"],
-      "expect_substrings": ["饱和函数"],
-      "note": "与 vector-search.md 的'距离度量'小节区分：答案只在 bm25.md"
+      "expect_substrings": ["饱和函数"]
+    },
+    {
+      "question": "BM25 的评分由哪几部分组成？",
+      "expect_sources": ["bm25.md"],
+      "expect_substrings": ["逆文档频率"]
     },
     {
       "question": "逆文档频率衡量的是什么？",
       "expect_sources": ["bm25.md"],
       "expect_substrings": ["区分度"]
+    },
+    {
+      "question": "BM25 对哪类词特别敏感？",
+      "expect_sources": ["bm25.md"],
+      "expect_substrings": ["型号"]
     },
     {
       "question": "停用词为什么通常直接过滤掉？",
@@ -97,8 +123,12 @@
     {
       "question": "HNSW 的构建代价是什么？",
       "expect_sources": ["vector-db.md"],
-      "expect_substrings": ["构建慢"],
-      "note": "vector-search.md 也讲 HNSW，但不是构建代价"
+      "expect_substrings": ["构建慢"]
+    },
+    {
+      "question": "HNSW 的内存占用有什么特点？",
+      "expect_sources": ["vector-db.md"],
+      "expect_substrings": ["内存占用大"]
     },
     {
       "question": "IVF 配合 PQ 的收益和代价分别是什么？",
@@ -106,14 +136,29 @@
       "expect_substrings": ["压缩内存"]
     },
     {
+      "question": "IVF 适合多大规模的数据？",
+      "expect_sources": ["vector-db.md"],
+      "expect_substrings": ["亿级"]
+    },
+    {
       "question": "DiskANN 依赖什么硬件？",
       "expect_sources": ["vector-db.md"],
       "expect_substrings": ["SSD"]
     },
     {
+      "question": "DiskANN 部署在云上要注意什么？",
+      "expect_sources": ["vector-db.md"],
+      "expect_substrings": ["盘的类型"]
+    },
+    {
       "question": "哪些任务才该丢给线程池？",
       "expect_sources": ["async-executor.md"],
       "expect_substrings": ["阻塞式调用"]
+    },
+    {
+      "question": "CompletableFuture 负责的是什么？",
+      "expect_sources": ["async-executor.md"],
+      "expect_substrings": ["编排"]
     },
     {
       "question": "CompletableFuture 默认用哪个线程池？",
@@ -126,6 +171,11 @@
       "expect_substrings": ["占满"]
     },
     {
+      "question": "纯计算任务丢进线程池会怎样？",
+      "expect_sources": ["async-executor.md"],
+      "expect_substrings": ["上下文切换"]
+    },
+    {
       "question": "G1 是怎么控制停顿时间的？",
       "expect_sources": ["jvm-gc.md"],
       "expect_substrings": ["Region"]
@@ -136,33 +186,309 @@
       "expect_substrings": ["内存开销"]
     },
     {
+      "question": "新生代用的是什么回收算法？",
+      "expect_sources": ["jvm-gc.md"],
+      "expect_substrings": ["复制"]
+    },
+    {
+      "question": "老年代用的是什么回收算法？",
+      "expect_sources": ["jvm-gc.md"],
+      "expect_substrings": ["标记"]
+    },
+    {
       "question": "GC 长停顿为什么容易被误判成线程池问题？",
       "expect_sources": ["jvm-gc.md"],
-      "expect_substrings": ["全局停顿"],
-      "note": "干扰项：jvm-gc.md 里也出现了'线程池'"
+      "expect_substrings": ["全局停顿"]
+    },
+    {
+      "question": "分代假设说的是什么现象？",
+      "expect_sources": ["jvm-gc.md"],
+      "expect_substrings": ["朝生夕死"]
     },
     {
       "question": "型号 M03 的精度是多少？",
       "expect_sources": ["spec-sheet.md"],
-      "expect_substrings": ["M03"],
-      "note": "大表前段：验证表格切片后行仍可定位"
+      "expect_substrings": ["M03"]
     },
     {
       "question": "型号 M15 的精度是多少？",
       "expect_sources": ["spec-sheet.md"],
-      "expect_substrings": ["M15"],
-      "note": "大表中段"
+      "expect_substrings": ["M15"]
     },
     {
       "question": "型号 M24 的温漂是多少？",
       "expect_sources": ["spec-sheet.md"],
-      "expect_substrings": ["M24"],
-      "note": "大表末段"
+      "expect_substrings": ["M24"]
+    },
+    {
+      "question": "型号 M10 的量程是多少？",
+      "expect_sources": ["spec-sheet.md"],
+      "expect_substrings": ["100"]
     },
     {
       "question": "选型时量程要留多少余量？",
       "expect_sources": ["spec-sheet.md"],
       "expect_substrings": ["20%"]
+    },
+    {
+      "question": "温漂指标决定什么？",
+      "expect_sources": ["spec-sheet.md"],
+      "expect_substrings": ["稳定性"]
+    },
+    {
+      "question": "recall@k 看不看命中名次？",
+      "expect_sources": ["rag-eval.md"],
+      "expect_substrings": ["只看有没有命中"]
+    },
+    {
+      "question": "MRR 为什么比 recall@k 更敏感？",
+      "expect_sources": ["rag-eval.md"],
+      "expect_substrings": ["倒数"]
+    },
+    {
+      "question": "NDCG 适合什么样的场景？",
+      "expect_sources": ["rag-eval.md"],
+      "expect_substrings": ["不同等级"]
+    },
+    {
+      "question": "NDCG 和 MRR 的关键区别是什么？",
+      "expect_sources": ["rag-eval.md"],
+      "expect_substrings": ["多档相关"]
+    },
+    {
+      "question": "recall 一般取哪几个 k 值？",
+      "expect_sources": ["rag-eval.md"],
+      "expect_substrings": ["1、5、10"]
+    },
+    {
+      "question": "按位置衰减求和的是哪个指标？",
+      "expect_sources": ["rag-eval.md"],
+      "expect_substrings": ["位置衰减"]
+    },
+    {
+      "question": "语料太小会给评测带来什么问题？",
+      "expect_sources": ["rag-eval.md"],
+      "expect_substrings": ["饱和"]
+    },
+    {
+      "question": "黄金集为什么必须放干扰文档？",
+      "expect_sources": ["rag-eval.md"],
+      "expect_substrings": ["看起来都相关"]
+    },
+    {
+      "question": "样本量小的时候指标差异有什么问题？",
+      "expect_sources": ["rag-eval.md"],
+      "expect_substrings": ["噪声"]
+    },
+    {
+      "question": "中文嵌入模型的常见维度是多少？",
+      "expect_sources": ["embedding-models.md"],
+      "expect_substrings": ["768"]
+    },
+    {
+      "question": "嵌入维度越高会带来什么代价？",
+      "expect_sources": ["embedding-models.md"],
+      "expect_substrings": ["建索引"]
+    },
+    {
+      "question": "为什么入库前建议把向量归一化？",
+      "expect_sources": ["embedding-models.md"],
+      "expect_substrings": ["内积"]
+    },
+    {
+      "question": "输入超过模型最大长度会怎样？",
+      "expect_sources": ["embedding-models.md"],
+      "expect_substrings": ["静默截断"]
+    },
+    {
+      "question": "稀疏向量更擅长匹配什么？",
+      "expect_sources": ["embedding-models.md"],
+      "expect_substrings": ["专有名词"]
+    },
+    {
+      "question": "长文档为什么必须先切片再嵌入？",
+      "expect_sources": ["embedding-models.md"],
+      "expect_substrings": ["截断"]
+    },
+    {
+      "question": "归一化之后内积和哪种相似度等价？",
+      "expect_sources": ["embedding-models.md"],
+      "expect_substrings": ["余弦"]
+    },
+    {
+      "question": "中文嵌入模型的最大长度一般是多大？",
+      "expect_sources": ["embedding-models.md"],
+      "expect_substrings": ["512"]
+    },
+    {
+      "question": "synchronized 是可重入的吗？",
+      "expect_sources": ["java-locks.md"],
+      "expect_substrings": ["可重入"]
+    },
+    {
+      "question": "synchronized 有哪些锁升级阶段？",
+      "expect_sources": ["java-locks.md"],
+      "expect_substrings": ["偏向锁"]
+    },
+    {
+      "question": "ReentrantLock 比 synchronized 多了哪些能力？",
+      "expect_sources": ["java-locks.md"],
+      "expect_substrings": ["可中断"]
+    },
+    {
+      "question": "ReentrantLock 的代价是什么？",
+      "expect_sources": ["java-locks.md"],
+      "expect_substrings": ["try/finally"]
+    },
+    {
+      "question": "读多写少的场景适合用哪种锁？",
+      "expect_sources": ["java-locks.md"],
+      "expect_substrings": ["读写锁"]
+    },
+    {
+      "question": "读写锁里读操作和写操作是什么关系？",
+      "expect_sources": ["java-locks.md"],
+      "expect_substrings": ["互斥"]
+    },
+    {
+      "question": "CAS 属于乐观策略还是悲观策略？",
+      "expect_sources": ["java-locks.md"],
+      "expect_substrings": ["乐观"]
+    },
+    {
+      "question": "CAS 在高冲突时会有什么表现？",
+      "expect_sources": ["java-locks.md"],
+      "expect_substrings": ["空转"]
+    },
+    {
+      "question": "ABA 问题是哪种策略的副作用？",
+      "expect_sources": ["java-locks.md"],
+      "expect_substrings": ["CAS"]
+    },
+    {
+      "question": "虚拟线程是由谁调度的？",
+      "expect_sources": ["virtual-threads.md"],
+      "expect_substrings": ["JVM"]
+    },
+    {
+      "question": "虚拟线程阻塞的时候会发生什么？",
+      "expect_sources": ["virtual-threads.md"],
+      "expect_substrings": ["让出"]
+    },
+    {
+      "question": "虚拟线程适合跑纯计算任务吗？",
+      "expect_sources": ["virtual-threads.md"],
+      "expect_substrings": ["没有好处"]
+    },
+    {
+      "question": "虚拟线程为什么不适合缓存 ThreadLocal？",
+      "expect_sources": ["virtual-threads.md"],
+      "expect_substrings": ["膨胀"]
+    },
+    {
+      "question": "虚拟线程的数量级能到多少？",
+      "expect_sources": ["virtual-threads.md"],
+      "expect_substrings": ["百万"]
+    },
+    {
+      "question": "虚拟线程为什么不该再套线程池？",
+      "expect_sources": ["virtual-threads.md"],
+      "expect_substrings": ["便宜"]
+    },
+    {
+      "question": "多个虚拟线程复用的是什么？",
+      "expect_sources": ["virtual-threads.md"],
+      "expect_substrings": ["载体线程"]
+    },
+    {
+      "question": "平台线程的数量级大概是多少？",
+      "expect_sources": ["virtual-threads.md"],
+      "expect_substrings": ["千级"]
+    },
+    {
+      "question": "depends_on 能保证依赖服务已经可用吗？",
+      "expect_sources": ["docker-compose.md"],
+      "expect_substrings": ["健康"]
+    },
+    {
+      "question": "怎么让 compose 等服务就绪再启动？",
+      "expect_sources": ["docker-compose.md"],
+      "expect_substrings": ["healthcheck"]
+    },
+    {
+      "question": "同一条 compose 网络里怎么访问别的服务？",
+      "expect_sources": ["docker-compose.md"],
+      "expect_substrings": ["服务名"]
+    },
+    {
+      "question": "容器里的数据为什么会丢？",
+      "expect_sources": ["docker-compose.md"],
+      "expect_substrings": ["重建"]
+    },
+    {
+      "question": "容器数据怎么持久化？",
+      "expect_sources": ["docker-compose.md"],
+      "expect_substrings": ["volume"]
+    },
+    {
+      "question": "compose 里的变量默认值什么时候生效？",
+      "expect_sources": ["docker-compose.md"],
+      "expect_substrings": ["宿主环境"]
+    },
+    {
+      "question": "密钥应该提交到哪里？",
+      "expect_sources": ["docker-compose.md"],
+      "expect_substrings": [".env.example"]
+    },
+    {
+      "question": "什么情况下才需要映射端口？",
+      "expect_sources": ["docker-compose.md"],
+      "expect_substrings": ["宿主机"]
+    },
+    {
+      "question": "HNSW 的 m 参数控制什么？",
+      "expect_sources": ["pgvector-ops.md"],
+      "expect_substrings": ["连接数"]
+    },
+    {
+      "question": "ef_search 调大会有什么变化？",
+      "expect_sources": ["pgvector-ops.md"],
+      "expect_substrings": ["召回"]
+    },
+    {
+      "question": "调整 ef_search 需要重建索引吗？",
+      "expect_sources": ["pgvector-ops.md"],
+      "expect_substrings": ["不必"]
+    },
+    {
+      "question": "IVF 的 lists 参数决定什么？",
+      "expect_sources": ["pgvector-ops.md"],
+      "expect_substrings": ["聚类"]
+    },
+    {
+      "question": "probes 设得太小会有什么问题？",
+      "expect_sources": ["pgvector-ops.md"],
+      "expect_substrings": ["漏结果"]
+    },
+    {
+      "question": "召回不足时首先该核对什么？",
+      "expect_sources": ["pgvector-ops.md"],
+      "expect_substrings": ["同一个模型"]
+    },
+    {
+      "question": "调大 ef_search 也救不回召回说明什么？",
+      "expect_sources": ["pgvector-ops.md"],
+      "expect_substrings": ["切片"]
+    },
+    {
+      "question": "更换嵌入模型通常要做什么？",
+      "expect_sources": ["pgvector-ops.md"],
+      "expect_substrings": ["重建"]
+    },
+    {
+      "question": "向量列的维度是什么时候确定的？",
+      "expect_sources": ["pgvector-ops.md"],
+      "expect_substrings": ["建表"]
     }
   ]
 }
