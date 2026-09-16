@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Block } from "@/api/sessions";
 import MarkdownContent from "@/components/chat/MarkdownContent";
-import { isClickableUrl, isHttpUrl, splitByLinks } from "@/lib/linkify";
+import UrlLink from "@/components/chat/UrlLink";
+import { isClickableUrl, splitByLinks } from "@/lib/linkify";
 import { useUiStore } from "@/stores/ui";
 
 export default function BlockRenderer({
@@ -83,7 +84,9 @@ export default function BlockRenderer({
           <ul className="mt-1 space-y-0.5">
             {links.map((url) => (
               <li key={url} className="truncate">
-                <ToolLink url={url} />
+                <UrlLink url={url} className="text-primary hover:underline">
+                  🔗 {url}
+                </UrlLink>
               </li>
             ))}
           </ul>
@@ -94,45 +97,17 @@ export default function BlockRenderer({
   return null; // citation 块由 MessageItem 统一渲染为 CitationList
 }
 
-/** 单个可点击 URL：http(s) 走新标签页；自定义协议（weixin:// 等）交给系统唤起客户端 */
-function ToolLink({ url }: { url: string }) {
-  if (isHttpUrl(url)) {
-    return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer noopener"
-        title={`${url}（Ctrl/⌘+点击在新标签页打开）`}
-        className="text-primary hover:underline"
-      >
-        🔗 {url}
-      </a>
-    );
-  }
-  // 自定义协议不加 target：加了可能先弹一个空白标签页再交给协议处理器
-  return (
-    <a href={url} title={`${url}（点击唤起对应客户端）`} className="text-primary hover:underline">
-      🔗 {url}
-    </a>
-  );
-}
-
 /** 纯文本里的 URL 也渲染成可点击链接：工具原文常直接写着「点击支付链接：weixin://…」 */
 function LinkifiedText({ text }: { text: string }) {
   return (
     <>
       {splitByLinks(text).map((segment, index) =>
         segment.kind === "link" ? (
-          <a
+          <UrlLink
             key={index}
-            href={segment.value}
-            {...(isHttpUrl(segment.value)
-              ? { target: "_blank", rel: "noreferrer noopener" }
-              : {})}
-            className="text-primary hover:underline"
-          >
-            {segment.value}
-          </a>
+            url={segment.value}
+            className="break-all text-primary hover:underline"
+          />
         ) : (
           <span key={index}>{segment.value}</span>
         ),

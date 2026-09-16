@@ -15,9 +15,24 @@ test("正文里的 markdown 图片渲染为可查看的图", async () => {
   expect(img.closest("a")).toHaveAttribute("href", "https://a.com/q.png");
 });
 
-test("行内代码里的协议不被链接化", async () => {
-  render(<MarkdownContent content={"例如 `weixin://wxpay?pr=abc` 这样"} />);
-  expect(await screen.findByText(/weixin:\/\/wxpay\?pr=abc/)).toBeInTheDocument();
+test("写在行内代码里的链接也能点（模型经常这么写）", async () => {
+  render(
+    <MarkdownContent content={"点击支付链接：`weixin://wxpay/bizpayurl?pr=5QQN6IHVP3iImz24`\n或扫码"} />,
+  );
+  const link = await screen.findByRole("link", { name: "weixin://wxpay/bizpayurl?pr=5QQN6IHVP3iImz24" });
+  expect(link).toHaveAttribute("href", "weixin://wxpay/bizpayurl?pr=5QQN6IHVP3iImz24");
+  expect(link).not.toHaveAttribute("target");
+});
+
+test("行内代码里的普通文本仍是代码", async () => {
+  render(<MarkdownContent content={"比如 `npm run dev` 这样"} />);
+  expect(await screen.findByText("npm run dev")).toBeInTheDocument();
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+});
+
+test("多行代码块里的 URL 不会被链接化", async () => {
+  render(<MarkdownContent content={"```bash\ncurl weixin://wxpay?pr=abc\n```"} />);
+  await screen.findByText("复制");
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
 

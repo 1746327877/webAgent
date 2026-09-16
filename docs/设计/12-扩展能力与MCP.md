@@ -181,7 +181,10 @@ agent_mcp_tools
   - `http(s)` 链接带 `<a target="_blank" rel="noreferrer noopener">`，**普通点击、Ctrl/⌘+点击、中键**都能跳转；自定义协议（`weixin://`）**不加 `target`**，直接交给系统协议处理器唤起客户端（加了反而可能先弹空白标签页）。
 - 前端 `ToolArtifacts`（挂在**助手回复下方**，由 `MessageItem` 汇总本条消息所有 `tool_result` 的 `images`）：图片是用户真正要的**结果**（支付二维码、生成图），要能在正经回复里看到，而不是藏在折叠的工具卡片里。去重、只保留 `http(s)`、最多 5 张；正文里已用 markdown 图片语法写出的地址不重复展示（`text.includes(url)`）；缩略图用 `object-contain` + `bg-white`，避免裁切/深色主题下二维码扫不出来。
 - 前端白名单过滤放在 `lib/linkify.ts`（与后端 `_URL_SCHEME` 对齐），代码块跳过逻辑抽到 `lib/plainText.ts`（与引用锚点 `lib/citations.ts` 共用）。**改 scheme 白名单时前后端两处都要改**。
-- markdown 正文（模型自己写的回复）：`autolinkBareUrls` 把裸的自定义协议包成 CommonMark autolink（`<weixin://…>`）——GFM 的自动链接只认 `http(s)`/`www`/邮箱，智能体直接写出来的支付链接否则只是死文本；`MarkdownContent` 传入自定义 `urlTransform`，因为 react-markdown 默认只放行 `https?|ircs?|mailto|xmpp`，会把 `weixin://` 的 href 清成空字符串（表现就是「点了没反应」）；另外覆盖了 `img` 渲染，模型按 markdown 图片语法给出的图也能直接看到。
+- markdown 正文（模型自己写的回复）：`autolinkBareUrls` 把裸的自定义协议包成 CommonMark autolink（`<weixin://…>`）——GFM 的自动链接只认 `http(s)`/`www`/邮箱，智能体直接写出来的支付链接否则只是死文本；`MarkdownContent` 传入自定义 `urlTransform`，因为 react-markdown 默认只放行 `https?|ircs?|mailto|xmpp`，会把 `weixin://` 的 href 清成空字符串（表现就是「点了没反应」）。
+  - **行内代码**：本地模型习惯把链接写成 `` `weixin://…` ``，而行内代码优先于 autolink 解析（backtick 先成 code span，`<…>` 包了也没用），渲染出来是等宽文本、点不动。因此 `MarkdownContent` 覆盖了 `code`：**无语言标记 + 单行 + 整段就是一个白名单链接**时渲染成 `<a>`。唯一误伤是「无语言标记、内容只有一个 URL 的围栏代码块」会显示成代码框里的链接，不影响使用。
+  - 覆盖了 `img` 渲染，模型按 markdown 图片语法给出的图也能直接看到。
+  - 可点击链接的 `<a>` 统一走 `components/chat/UrlLink.tsx`（`http(s)` → `target="_blank"`；自定义协议不加 `target`）。
 - 已知限制：图片是浏览器直连外链加载，不经过后端鉴权；要求鉴权的图片 URL 会加载失败（正文链接仍可点）。自定义协议能否唤起取决于本机是否装了对应客户端（微信未安装时点击无反应）。
 
 ## 12.7 测试

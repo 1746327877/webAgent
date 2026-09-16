@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import { linkifyCitations } from "@/lib/citations";
 import { autolinkBareUrls, isClickableUrl } from "@/lib/linkify";
+import UrlLink from "@/components/chat/UrlLink";
 import { createHighlighterCoreSync } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
@@ -129,6 +130,21 @@ export default function MarkdownContent({
 }) {
   const components: Components = {
     pre: PreBlock,
+    // 模型常把链接包在反引号里写成行内代码（`weixin://…`），而行内代码优先于自动链接解析，
+    // 结果就是等宽文本、点不动（用户只会选中文字）。整段就是链接的行内代码直接渲染成链接。
+    // 判定用「无语言标记 + 单行」：唯一的误伤是「无语言标记、内容只有一个 URL 的围栏代码块」，
+    // 那种情况会显示成代码框里的链接，不影响使用。
+    code: ({ node: _node, className, children, ...props }: ComponentPropsWithoutRef<"code"> & ExtraProps) => {
+      const text = typeof children === "string" ? children : "";
+      if (!className && !text.includes("\n") && isClickableUrl(text)) {
+        return <UrlLink url={text} className="break-all text-primary underline" />;
+      }
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
     // 模型在回复里直接写 markdown 图片（工具给的二维码/生成图地址）时也能看到图
     img: ({ node: _node, ...props }: ComponentPropsWithoutRef<"img"> & ExtraProps) => (
       <a
