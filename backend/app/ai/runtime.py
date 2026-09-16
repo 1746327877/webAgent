@@ -563,6 +563,7 @@ async def run_generation(
                     "page": c.page,
                     "score": round(c.rrf_score, 4),
                     "similarity": round(c.similarity, 4),
+                    "headings": c.headings,
                     "snippet": c.content[:200],
                 }
                 for i, c in enumerate(retrieval_chunks, 1)
