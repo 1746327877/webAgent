@@ -152,6 +152,30 @@ test("引用卡片展示章节路径", () => {
   expect(screen.getByText(/第3章 › 3\.1 核心参数/)).toBeInTheDocument();
 });
 
+test("历史消息引用块没有 headings 时不渲染章节分隔符", () => {
+  render(
+    <MessageItem
+      message={makeMessage({
+        blocks: [
+          { type: "text", content: "回答 [1]" },
+          {
+            type: "citation",
+            ref: 1,
+            chunk_id: "c1",
+            source: "java.md",
+            page: 12,
+            score: 0.8,
+            snippet: "片段",
+          },
+        ],
+      })}
+    />,
+  );
+  // 分块策略上线前的历史消息没有 headings 字段，兼容契约：只显示来源与页码，不出现 " › "
+  expect(screen.getByText(/java\.md · p12/)).toBeInTheDocument();
+  expect(screen.queryByText(/›/)).not.toBeInTheDocument();
+});
+
 test("回复正文里已经写出的图片不重复展示", () => {
   const url = "https://a.com/q.png";
   render(
