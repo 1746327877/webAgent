@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     mineru_backend: str = "pipeline"
     # 联网搜索 MCP（compose 的 web-search 服务）；为空表示不支持联网搜索按钮
     web_search_mcp_url: str = ""
+    # OCR MCP（部署方自备的 OCR 服务）；为空表示图片回合不挂 OCR 工具
+    ocr_mcp_url: str = ""
 
 
 settings = Settings()

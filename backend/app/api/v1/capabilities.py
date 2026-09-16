@@ -51,12 +51,8 @@ async def get_parser_status(user: Annotated[User, Depends(get_current_user)]):
     return status
 
 
-@router.get("/web-search")
-async def get_web_search_status(user: Annotated[User, Depends(get_current_user)]):
-    """联网搜索 MCP 状态：未配置或连接失败时前端禁用输入框按钮。"""
-    from app.ai import web_search
-
-    url = (settings.web_search_mcp_url or "").strip()
+async def _mcp_slot_status(url: str, binding_factory, *, unconfigured: str) -> dict:
+    """部署级 MCP 槽位状态（联网搜索 / OCR 共用）：给前端"是否可用"的依据。"""
     status: dict = {
         "enabled": bool(url),
         "url": url or None,
@@ -66,16 +62,40 @@ async def get_web_search_status(user: Annotated[User, Depends(get_current_user)]
         "error": None,
     }
     if not url:
-        status["error"] = "未配置 WEB_SEARCH_MCP_URL，联网搜索不可用"
+        status["error"] = unconfigured
         return status
 
     started = time.monotonic()
     # binding() 内部带 TTL 缓存，轮询不会反复建连
-    binding = await web_search.binding()
+    result = await binding_factory()
     status["latency_ms"] = round((time.monotonic() - started) * 1000)
-    if binding is None:
-        status["error"] = "联网搜索 MCP 连接失败，请确认 web-search 服务已启动"
+    if result is None:
+        status["error"] = "MCP 连接失败，请确认外部服务已启动"
         return status
     status["healthy"] = True
-    status["tools"] = [str(tool.get("name")) for tool in binding.tools]
+    status["tools"] = [str(tool.get("name")) for tool in result.tools]
     return status
+
+
+@router.get("/web-search")
+async def get_web_search_status(user: Annotated[User, Depends(get_current_user)]):
+    """联网搜索 MCP 状态：未配置或连接失败时前端禁用输入框按钮。"""
+    from app.ai import web_search
+
+    return await _mcp_slot_status(
+        (settings.web_search_mcp_url or "").strip(),
+        web_search.binding,
+        unconfigured="未配置 WEB_SEARCH_MCP_URL，联网搜索不可用",
+    )
+
+
+@router.get("/ocr")
+async def get_ocr_status(user: Annotated[User, Depends(get_current_user)]):
+    """OCR MCP 状态：未配置时图片回合不挂 OCR 工具。"""
+    from app.ai import ocr
+
+    return await _mcp_slot_status(
+        (settings.ocr_mcp_url or "").strip(),
+        ocr.binding,
+        unconfigured="未配置 OCR_MCP_URL，图片回合不挂 OCR 工具",
+    )

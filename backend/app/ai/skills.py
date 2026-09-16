@@ -110,6 +110,28 @@ _register(
 )
 
 
+_register(
+    SkillDef(
+        slug="doc_convert",
+        name="文档转换",
+        icon="📄",
+        summary="在 Markdown、表格、纯文本等格式间转换文档内容，尽量保留原有结构。",
+        usage=(
+            "上传文档（pdf/docx/md/txt）后说明目标格式，例如「转成 Markdown 表格」；"
+            "系统会把附件文本并入上下文，模型按目标格式重排输出。"
+        ),
+        instructions=(
+            "用户要求格式转换时，严格按目标格式输出，不要附加解释性前言或多余总结。"
+            "保留原文的层级、列表与表格结构；原文缺失或无法识别的内容用「（原文缺失）」占位，禁止补写。"
+            "内容是表格数据时输出 Markdown 表格；要求纯文本时去掉 Markdown 标记但保留换行与缩进。"
+            "转换结果较长时分节输出，并在开头用一句话说明来源文件名与目标格式。"
+        ),
+        examples=["把这份 PDF 转成 Markdown", "把这段话整理成表格", "去掉 Markdown 标记，只要纯文本"],
+        recommended_tools=[],
+    )
+)
+
+
 def list_skills() -> list[dict]:
     return [asdict(skill) for skill in SKILL_REGISTRY.values()]
 

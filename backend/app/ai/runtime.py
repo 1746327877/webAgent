@@ -620,6 +620,14 @@ async def run_generation(
                 injected = await web_search_capability.binding()
                 if injected is not None:
                     bindings.append(injected)
+        if image_paths:
+            # 有图回合自动挂上 OCR MCP（docs/设计/20），让模型能对扫描件/截图取字
+            from app.ai import ocr as ocr_capability
+
+            if all(b.server_name != ocr_capability.SERVER_NAME for b in bindings):
+                injected = await ocr_capability.binding()
+                if injected is not None:
+                    bindings.append(injected)
         mcp_tool_payload, mcp_map = build_mcp_tools(bindings)
         all_tools = tools_payload(cfg.tool_slugs) + mcp_tool_payload
 

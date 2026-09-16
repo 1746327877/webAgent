@@ -10,6 +10,8 @@ x-backend-env: &backend-env
   MINERU_BACKEND: ${MINERU_BACKEND:-pipeline}
   # 联网搜索 MCP（compose 的 web-search 服务）；留空则输入框按钮禁用
   WEB_SEARCH_MCP_URL: ${WEB_SEARCH_MCP_URL:-http://web-search:3000/mcp}
+  # OCR MCP（部署方自备服务）；留空则图片回合不挂 OCR 工具
+  OCR_MCP_URL: ${OCR_MCP_URL:-}
 
 services:
   postgres:

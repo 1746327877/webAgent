@@ -38,7 +38,7 @@ flowchart LR
 | chunk_size | 512 token | 用 tiktoken 粗算 |
 | chunk_overlap | 64 token | 保住跨片语义 |
 | 优先级 | Markdown 标题树 > 段落 > 递归字符 | PDF 先转伪 Markdown（PyMuPDF 提取 heading） |
-| meta | `{page, heading_path, source}` | 页码支撑引用溯源跳转 |
+| meta | `{page, headings}` | 页码与章节路径支撑引用溯源；`headings` 仅 Markdown 来源有值 |
 | 表格 | 简单策略：整表保持单 chunk（超长截断） | 深度表格解析（表格转行描述）标注为进阶项 |
 
 > [!warning] 已知坑

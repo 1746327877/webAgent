@@ -15,6 +15,7 @@ async def test_list_skills_returns_full_fields(client, auth_headers):
     skills = r.json()
     slugs = [s["slug"] for s in skills]
     assert "kb_qa" in slugs
+    assert "doc_convert" in slugs
     for skill in skills:
         for field in (
             "slug",
