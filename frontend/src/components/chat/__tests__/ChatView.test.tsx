@@ -76,6 +76,13 @@ vi.mock("@/api/agents", () => ({
   }),
 }));
 
+// 联网搜索按钮的可用性来自能力探测接口；这里固定为"已配置且健康"
+vi.mock("@/api/capabilities", () => ({
+  useWebSearchStatus: () => ({
+    data: { enabled: true, healthy: true, url: "http://ws/mcp", tools: ["search"], error: null },
+  }),
+}));
+
 // 流式事件按序同步派发后挂起，便于断言叠加层渲染（结束后会被 clearActive 清掉）
 vi.mock("@/lib/stream", () => ({
   streamRequest: async (
@@ -177,7 +184,7 @@ beforeEach(() => {
   mockState.lastBody = null;
   mockState.tokens = [];
   mockState.createCalls = 0;
-  useComposerStore.setState({ modelOverride: null });
+  useComposerStore.setState({ modelOverride: null, webSearch: false });
 });
 
 afterEach(() => {
@@ -287,6 +294,21 @@ test("落地态输入发送创建新会话并走同一发送路径", async () =>
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "你好{Enter}");
   await waitFor(() => expect(mockState.lastPath).toBe("/api/v1/sessions/new-1/messages"));
   expect(mockState.lastBody).toEqual({ content: "你好", mentions: [], attachment_ids: [] });
+});
+
+test("默认不携带 web_search", async () => {
+  renderAtRoot();
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "你好{Enter}");
+  await waitFor(() => expect(mockState.lastBody).not.toBeNull());
+  expect(mockState.lastBody).not.toHaveProperty("web_search");
+});
+
+test("开启联网搜索后请求体带 web_search", async () => {
+  renderAtRoot();
+  await userEvent.click(screen.getByRole("button", { name: "联网搜索" }));
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "搜一下{Enter}");
+  await waitFor(() => expect(mockState.lastBody).not.toBeNull());
+  expect(mockState.lastBody).toMatchObject({ content: "搜一下", web_search: true });
 });
 
 test("落地态拖入多个附件只创建一个会话并逐个上传", async () => {

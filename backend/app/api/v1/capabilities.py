@@ -49,3 +49,33 @@ async def get_parser_status(user: Annotated[User, Depends(get_current_user)]):
         status["latency_ms"] = round((time.monotonic() - started) * 1000)
         status["error"] = f"{type(exc).__name__}: {exc}"[:200]
     return status
+
+
+@router.get("/web-search")
+async def get_web_search_status(user: Annotated[User, Depends(get_current_user)]):
+    """联网搜索 MCP 状态：未配置或连接失败时前端禁用输入框按钮。"""
+    from app.ai import web_search
+
+    url = (settings.web_search_mcp_url or "").strip()
+    status: dict = {
+        "enabled": bool(url),
+        "url": url or None,
+        "healthy": False,
+        "tools": [],
+        "latency_ms": None,
+        "error": None,
+    }
+    if not url:
+        status["error"] = "未配置 WEB_SEARCH_MCP_URL，联网搜索不可用"
+        return status
+
+    started = time.monotonic()
+    # binding() 内部带 TTL 缓存，轮询不会反复建连
+    binding = await web_search.binding()
+    status["latency_ms"] = round((time.monotonic() - started) * 1000)
+    if binding is None:
+        status["error"] = "联网搜索 MCP 连接失败，请确认 web-search 服务已启动"
+        return status
+    status["healthy"] = True
+    status["tools"] = [str(tool.get("name")) for tool in binding.tools]
+    return status

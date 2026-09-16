@@ -9,6 +9,7 @@ import {
   type MessageItemData,
 } from "@/api/sessions";
 import { useAgent, useAgents, useModels, toAgentBadge } from "@/api/agents";
+import { useWebSearchStatus } from "@/api/capabilities";
 import AgentAvatar from "@/components/agents/AgentAvatar";
 import { apiFetch } from "@/lib/api";
 import { streamRequest } from "@/lib/stream";
@@ -64,6 +65,11 @@ export default function ChatView() {
   const { data: models = [] } = useModels();
   const modelOverride = useComposerStore((s) => s.modelOverride);
   const setModelOverride = useComposerStore((s) => s.setModelOverride);
+  const webSearch = useComposerStore((s) => s.webSearch);
+  const setWebSearch = useComposerStore((s) => s.setWebSearch);
+  // 未配置/不可用时按钮禁用；轮询通过 useWebSearchStatus 内置的 refetchInterval
+  const { data: webSearchStatus } = useWebSearchStatus();
+  const webSearchAvailable = Boolean(webSearchStatus?.enabled && webSearchStatus?.healthy);
   const defaultModel = (a?: { model_config?: Record<string, unknown> }) => {
     const m = a?.model_config?.model;
     return typeof m === "string" && m ? m : null;
@@ -279,6 +285,8 @@ export default function ChatView() {
         attachment_ids: attachmentIds,
         // 仅在用户显式选过模型时上报，保持默认行为与既有请求体一致
         ...(modelOverride ? { model_override: modelOverride } : {}),
+        // 联网搜索为对话级开关：仅在开启时上报
+        ...(webSearch ? { web_search: true } : {}),
       },
       target,
       "发送失败",
@@ -365,6 +373,9 @@ export default function ChatView() {
               modelOverride={modelOverride}
               onModelChange={setModelOverride}
               defaultModelLabel={defaultModelLabel}
+              webSearch={webSearch}
+              onWebSearchChange={setWebSearch}
+              webSearchAvailable={webSearchAvailable}
             />
           </div>
           <p className="text-xs text-muted-foreground">
@@ -521,6 +532,9 @@ export default function ChatView() {
           modelOverride={modelOverride}
           onModelChange={setModelOverride}
           defaultModelLabel={defaultModelLabel}
+          webSearch={webSearch}
+          onWebSearchChange={setWebSearch}
+          webSearchAvailable={webSearchAvailable}
         />
       </div>
       {openCitation && (

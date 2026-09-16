@@ -8,6 +8,8 @@ x-backend-env: &backend-env
   MINERU_API_URL: ${MINERU_API_URL:-}
   # pipeline 支持纯 CPU；hybrid/vlm 需要 CUDA
   MINERU_BACKEND: ${MINERU_BACKEND:-pipeline}
+  # 联网搜索 MCP（compose 的 web-search 服务）；留空则输入框按钮禁用
+  WEB_SEARCH_MCP_URL: ${WEB_SEARCH_MCP_URL:-http://web-search:3000/mcp}
 
 services:
   postgres:

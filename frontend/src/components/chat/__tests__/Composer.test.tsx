@@ -25,6 +25,27 @@ test("generating 时点击停止", async () => {
   expect(onStop).toHaveBeenCalled();
 });
 
+test("联网搜索按钮未配置时禁用", () => {
+  render(<Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} />);
+  expect(screen.getByRole("button", { name: "联网搜索" })).toBeDisabled();
+});
+
+test("联网搜索按钮切换回调携带目标状态", async () => {
+  const onChange = vi.fn();
+  render(
+    <Composer
+      onSend={vi.fn()}
+      onStop={vi.fn()}
+      generating={false}
+      webSearchAvailable
+      webSearch={false}
+      onWebSearchChange={onChange}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "联网搜索" }));
+  expect(onChange).toHaveBeenCalledWith(true);
+});
+
 test("@ 弹出并选择后提交携带 mention", async () => {
   const onSend = vi.fn();
   render(<Composer onSend={onSend} onStop={vi.fn()} generating={false} agents={AGENTS} />);

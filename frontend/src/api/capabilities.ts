@@ -38,3 +38,21 @@ export function useParserStatus() {
     refetchInterval: 30000,
   });
 }
+
+/** 联网搜索 MCP 状态（后端 app/api/v1/capabilities.py 的 /web-search） */
+export interface WebSearchStatus {
+  enabled: boolean;
+  url: string | null;
+  healthy: boolean;
+  tools: string[];
+  latency_ms: number | null;
+  error: string | null;
+}
+
+export function useWebSearchStatus() {
+  return useQuery({
+    queryKey: ["capabilities", "web-search"],
+    queryFn: () => apiJson<WebSearchStatus>("/api/v1/capabilities/web-search"),
+    refetchInterval: 30000,
+  });
+}

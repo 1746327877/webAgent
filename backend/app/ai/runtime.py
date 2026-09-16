@@ -386,6 +386,7 @@ async def run_generation(
     image_paths: list[str] | None = None,
     document_files: list[tuple[str, str, str]] | None = None,
     attachment_ids: list[uuid.UUID] | None = None,
+    web_search: bool = False,
 ) -> AsyncIterator[str]:
     """user_content=None 时仅生成助手消息（重新生成/接力场景）。
 
@@ -395,6 +396,7 @@ async def run_generation(
     document_files 为 (落盘路径, 扩展名, 原始文件名) 列表，抽取文本后以 user 角色数据块
     （明确声明不是指令）注入，避免附件内容获得 system 级优先级；
     attachment_ids 在用户消息落库后回填 message_id。
+    web_search 开启时按需注入联网搜索 MCP 工具（部署级合成绑定，见 docs/设计/18）。
     """
     user = await db.get(User, session.user_id)
     user_name = user.username if user else ""
@@ -609,7 +611,16 @@ async def run_generation(
             )
 
         # 内置工具 + 绑定的 MCP 工具（命名 mcp__{server}__{tool}），MCP 调用经 mcp_map 还原
-        mcp_tool_payload, mcp_map = build_mcp_tools(cfg.mcp_bindings)
+        bindings = list(cfg.mcp_bindings)
+        if web_search:
+            # 对话级开关：按需合成联网搜索绑定（不写库，见 docs/设计/18）；已同名绑定则不重复注入
+            from app.ai import web_search as web_search_capability
+
+            if all(b.server_name != web_search_capability.SERVER_NAME for b in bindings):
+                injected = await web_search_capability.binding()
+                if injected is not None:
+                    bindings.append(injected)
+        mcp_tool_payload, mcp_map = build_mcp_tools(bindings)
         all_tools = tools_payload(cfg.tool_slugs) + mcp_tool_payload
 
         def _tool_label(tool_name: str) -> str:
