@@ -169,6 +169,15 @@ agent_mcp_tools
   - 探测不到（Ollama 不可用/模型未安装）→ 提示"无法判断"。
 - 实测结论（2026-09-16，Ollama + 本机模型）：`deepseek-r1:latest` 的 `capabilities` 含 `tools`，但给 8 个 MCP 工具时**不产生 `tool_calls`**（只在正文里反问用户）；`qwen2.5:7b-instruct-q4_K_M` 正常调用。**需要工具调用时优先用 qwen2.5 这类模型**。
 
+## 12.6c 工具结果里的链接与图片（补充）
+
+工具返回值里常有 URL（搜索结果的 `url`、图片直链等），但 `tool_result` 的 `preview` 只截 200 字，URL 常被截断。
+
+- 后端 `runtime.extract_tool_links(text)`：对**完整结果**做正则提取，按扩展名把图片（png/jpg/jpeg/webp/gif/svg）与普通链接分流；去重保序、各限 5 条；剥掉末尾标点。
+- `tool_result` block（以及对应的 SSE 事件）在非空时附带 `links` / `images` 数组，前端无需依赖 preview。
+- 前端 `BlockRenderer`：`images` 渲染为缩略图（点击/新标签页打开），`links` 渲染为 `🔗` 链接列表；均为 `<a target="_blank" rel="noreferrer noopener">`，因此**普通点击、Ctrl/⌘+点击、中键**都能正常跳转。只接受 `http(s)://`，脏值（`javascript:`、相对路径）不渲染成链接。
+- 已知限制：图片是浏览器直连外链加载，不经过后端鉴权；要求鉴权的图片 URL 会加载失败（正文链接仍可点）。
+
 ## 12.7 测试
 
 Phase 1 后端：`test_mcp_api.py`（CRUD、越权 404、唯一名、http/stdio 校验、`/test` monkeypatch `probe`、`/{id}/test` 写回状态）；`test_capabilities_api.py`（skills 端点字段完整、parser 状态、models 能力）；`test_tools_registry` 覆盖 `input_schema`。

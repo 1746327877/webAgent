@@ -96,7 +96,10 @@ async def test_mcp_tool_exposed_injected_and_called(client, auth_headers, monkey
 
     async def fake_call(config, name, args):
         calls.update({"name": name, "args": args, "url": config["url"]})
-        return "搜索结果：abc", "ok"
+        return (
+            "搜索结果：https://example.com/a 封面 https://example.com/a.png",
+            "ok",
+        )
 
     monkeypatch.setattr(mcp_service, "call_tool", fake_call)
 
@@ -132,5 +135,8 @@ async def test_mcp_tool_exposed_injected_and_called(client, auth_headers, monkey
     ).json()[1]["blocks"]
     result_block = next(b for b in blocks if b["type"] == "tool_result")
     assert result_block["status"] == "ok" and "搜索结果" in result_block["preview"]
+    # 工具结果里的 URL 会被提取出来，供前端渲染成链接/图片
+    assert result_block["links"] == ["https://example.com/a"]
+    assert result_block["images"] == ["https://example.com/a.png"]
     call_block = next(b for b in blocks if b["type"] == "tool_call")
     assert call_block["tool"] == "Baidu Search · web_search"

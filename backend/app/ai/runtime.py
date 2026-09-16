@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -27,6 +28,28 @@ MAX_TOOL_ROUNDS = 5
 TOOL_TIMEOUT_S = 30.0
 TOOL_RESULT_MAX = 8000
 TOOL_PREVIEW_LEN = 200
+# 工具结果里的 URL：图片按后缀识别，其余作为可点击链接；限量避免 block 膨胀
+TOOL_LINK_MAX = 5
+_URL_RE = re.compile(r"https?://[^\s\"'<>()\[\]{}，。；、]+")
+_IMAGE_URL_RE = re.compile(r"\.(png|jpe?g|webp|gif|svg)(\?|#|$)", re.IGNORECASE)
+
+
+def extract_tool_links(text: str) -> tuple[list[str], list[str]]:
+    """从工具结果里提取 URL，返回 (links, images)，去重保序且各限量。
+
+    直接对**完整结果**提取，而不是截断后的 preview —— URL 常被 200 字截掉。
+    JSON 里的 `"url": "https://…"` 也一样能命中（就是普通子串）。
+    """
+    links: list[str] = []
+    images: list[str] = []
+    for raw in _URL_RE.findall(text or ""):
+        url = raw.rstrip(".,;:!?，。；：！？")  # 去掉粘在末尾的标点
+        if not url:
+            continue
+        bucket = images if _IMAGE_URL_RE.search(url) else links
+        if url not in bucket and len(bucket) < TOOL_LINK_MAX:
+            bucket.append(url)
+    return links, images
 # 单个附件注入上下文上限，防止超大文档挤爆 prompt
 MAX_DOCUMENT_CONTEXT_CHARS = 8000
 CANCEL_FLAGS: dict[uuid.UUID, bool] = {}
@@ -744,26 +767,32 @@ async def run_generation(
                     duration_ms=elapsed,
                 )
                 preview = result[:TOOL_PREVIEW_LEN]
-                blocks.append(
-                    {
-                        "type": "tool_result",
-                        "id": call["id"],
-                        "tool": _tool_label(call["name"]),
-                        "status": tool_status,
-                        "elapsed_ms": elapsed,
-                        "preview": preview,
-                    }
-                )
-                yield sse(
-                    "tool_result",
-                    {
-                        "message_id": str(assistant_id),
-                        "id": call["id"],
-                        "status": tool_status,
-                        "elapsed_ms": elapsed,
-                        "preview": preview,
-                    },
-                )
+                links, images = extract_tool_links(result)
+                block: dict = {
+                    "type": "tool_result",
+                    "id": call["id"],
+                    "tool": _tool_label(call["name"]),
+                    "status": tool_status,
+                    "elapsed_ms": elapsed,
+                    "preview": preview,
+                }
+                if links:
+                    block["links"] = links
+                if images:
+                    block["images"] = images
+                blocks.append(block)
+                payload: dict = {
+                    "message_id": str(assistant_id),
+                    "id": call["id"],
+                    "status": tool_status,
+                    "elapsed_ms": elapsed,
+                    "preview": preview,
+                }
+                if links:
+                    payload["links"] = links
+                if images:
+                    payload["images"] = images
+                yield sse("tool_result", payload)
                 messages.append(
                     {"role": "tool", "content": result[:TOOL_RESULT_MAX], "tool_name": call["name"]}
                 )

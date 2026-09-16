@@ -40,6 +40,60 @@ test("空对象参数不渲染参数摘要", () => {
   expect(screen.queryByText(/\[object Object\]/)).not.toBeInTheDocument();
 });
 
+test("工具结果里的链接渲染为可点击 <a>（支持 Ctrl/⌘+点击新标签页）", () => {
+  render(
+    <BlockRenderer
+      block={{
+        type: "tool_result",
+        id: "c1",
+        tool: "web_search",
+        status: "ok",
+        elapsed_ms: 12,
+        preview: "搜索结果",
+        links: ["https://example.com/a"],
+      }}
+    />,
+  );
+  const link = screen.getByRole("link", { name: /example\.com\/a/ });
+  expect(link).toHaveAttribute("href", "https://example.com/a");
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
+});
+
+test("工具结果里的图片 URL 渲染为缩略图链接", () => {
+  render(
+    <BlockRenderer
+      block={{
+        type: "tool_result",
+        id: "c1",
+        tool: "web_search",
+        status: "ok",
+        elapsed_ms: 12,
+        preview: "封面",
+        images: ["https://example.com/a.png"],
+      }}
+    />,
+  );
+  const img = screen.getByAltText("工具返回图片");
+  expect(img).toHaveAttribute("src", "https://example.com/a.png");
+  expect(screen.getByRole("link", { name: /图片/ }).tagName).toBe("A");
+});
+
+test("非 http(s) 的脏值不会被渲染成链接", () => {
+  render(
+    <BlockRenderer
+      block={{
+        type: "tool_result",
+        id: "c1",
+        status: "ok",
+        preview: "x",
+        links: ["javascript:alert(1)", "/relative/path", 42],
+      }}
+    />,
+  );
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+});
+
 test("渲染 tool_result 状态与耗时", () => {
   render(
     <BlockRenderer

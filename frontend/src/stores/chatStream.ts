@@ -9,6 +9,9 @@ export interface ToolEvent {
   status?: string;
   elapsed_ms?: number;
   preview?: string;
+  /** 工具结果里提取出的 URL（链接 / 图片），供前端直接展示与跳转 */
+  links?: string[];
+  images?: string[];
 }
 
 interface ActiveStream {

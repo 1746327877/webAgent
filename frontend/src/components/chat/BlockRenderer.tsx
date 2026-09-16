@@ -67,6 +67,8 @@ export default function BlockRenderer({
   }
   if (block.type === "tool_result") {
     const ok = block.status === "ok";
+    const links = asHttpUrls(block.links);
+    const images = asHttpUrls(block.images);
     return (
       <details className="my-1 rounded border px-3 py-2 text-xs">
         <summary className="cursor-pointer text-muted-foreground">
@@ -75,8 +77,53 @@ export default function BlockRenderer({
           {!ok ? " · 失败" : ""}
         </summary>
         <p className="mt-1 whitespace-pre-wrap opacity-80">{String(block.preview ?? "")}</p>
+        {images.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {images.map((url) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noreferrer noopener"
+                title={`${url}（在新标签页打开）`}
+              >
+                <img
+                  src={url}
+                  alt="工具返回图片"
+                  loading="lazy"
+                  className="h-24 w-24 rounded-md border object-cover"
+                />
+              </a>
+            ))}
+          </div>
+        )}
+        {links.length > 0 && (
+          <ul className="mt-2 space-y-0.5">
+            {links.map((url) => (
+              <li key={url} className="truncate">
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  title={`${url}（Ctrl/⌘+点击在新标签页打开）`}
+                  className="text-primary hover:underline"
+                >
+                  🔗 {url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
       </details>
     );
   }
   return null; // citation 块由 MessageItem 统一渲染为 CitationList
+}
+
+/** 只接受 http(s) URL，避免把脏数据/相对路径渲染成可点击链接 */
+function asHttpUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is string => typeof item === "string" && /^https?:\/\//i.test(item),
+  );
 }
