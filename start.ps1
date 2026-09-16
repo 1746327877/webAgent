@@ -11,7 +11,7 @@
 
   Docker mode entry points:
     web  http://localhost:8090   (override with FRONTEND_PORT in .env)
-    api  http://localhost:8000/docs
+    api  http://localhost:8000/docs   (override with BACKEND_PORT in .env)
     login demo / Demo123456
 
   Local mode entry points:
@@ -29,15 +29,20 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location $root
 
-# Frontend host port: read FRONTEND_PORT from .env when present, else 8090
-# (8080 is commonly taken by Steam's CEF debug port / other apps).
+# Frontend / backend host ports: read from .env when present, else 8090 / 8000.
+# (8080 is commonly taken by Steam's CEF debug port; some Windows machines also
+#  reserve 8000 via Hyper-V/WinNAT, hence both are configurable.)
 $frontendPort = 8090
+$backendPort = 8000
 $envFile = Join-Path $root ".env"
 if (Test-Path $envFile) {
   $match = Select-String -Path $envFile -Pattern '^\s*FRONTEND_PORT\s*=\s*(\d+)' | Select-Object -First 1
   if ($match) { $frontendPort = [int]$match.Matches[0].Groups[1].Value }
+  $match = Select-String -Path $envFile -Pattern '^\s*BACKEND_PORT\s*=\s*(\d+)' | Select-Object -First 1
+  if ($match) { $backendPort = [int]$match.Matches[0].Groups[1].Value }
 }
 $frontendUrl = "http://localhost:$frontendPort"
+$backendUrl = "http://localhost:$backendPort"
 
 function Info($m) { Write-Host "[start] $m" -ForegroundColor Cyan }
 function Ok($m) { Write-Host "[ ok  ] $m" -ForegroundColor Green }
@@ -121,9 +126,12 @@ if ($Local) {
     Pop-Location
   }
 
-  $backendCmd = "Set-Location '$(Join-Path $root "backend")'; uv run uvicorn app.main:app --reload --port 8000"
+  $backendCmd = "Set-Location '$(Join-Path $root "backend")'; uv run uvicorn app.main:app --reload --port $backendPort"
   $workerCmd = "Set-Location '$(Join-Path $root "backend")'; uv run arq app.workers.settings.WorkerSettings"
   $frontCmd = "Set-Location '$(Join-Path $root "frontend")'; if (-not (Test-Path node_modules)) { pnpm install }; pnpm dev"
+
+  # Vite 的 /api 代理目标读 BACKEND_PORT，子进程从父进程继承环境变量
+  $env:BACKEND_PORT = "$backendPort"
 
   Info "starting backend / worker / frontend in separate windows"
   Start-Process powershell -ArgumentList "-NoExit", "-Command", $backendCmd
@@ -138,7 +146,7 @@ if ($Local) {
   Write-Host ""
   Ok "up and running (local)"
   Write-Host "  web    : http://localhost:5173"
-  Write-Host "  api    : http://localhost:8000/docs"
+  Write-Host "  api    : $backendUrl/docs"
   Write-Host "  login  : demo / Demo123456"
   Write-Host "  stop   : close the three spawned windows (or .\start.ps1 -Down)"
   exit 0
@@ -151,8 +159,8 @@ Info ("docker " + ($upArgs -join " "))
 & docker @upArgs
 if ($LASTEXITCODE -ne 0) { Fail "docker compose up failed" }
 
-Info "waiting for backend health (http://localhost:8000/health) ..."
-if (Wait-Http "http://localhost:8000/health" 180) { Ok "backend healthy" }
+Info "waiting for backend health ($backendUrl/health) ..."
+if (Wait-Http "$backendUrl/health" 180) { Ok "backend healthy" }
 else { Warn "backend health check timed out; run 'docker compose logs -f backend'" }
 
 Info "waiting for frontend ($frontendUrl) ..."
@@ -163,7 +171,7 @@ if (-not $NoOpen) { Start-Process $frontendUrl }
 Write-Host ""
 Ok "up and running"
 Write-Host "  web    : $frontendUrl"
-Write-Host "  api    : http://localhost:8000/docs"
+Write-Host "  api    : $backendUrl/docs"
 Write-Host "  login  : demo / Demo123456"
 Write-Host "  logs   : docker compose logs -f"
 Write-Host "  stop   : .\start.ps1 -Down"

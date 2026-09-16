@@ -48,7 +48,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8000:8000"
+      # 宿主端口可配置：部分 Windows 机器把 8000 划进 Hyper-V/WinNAT 保留段，容器会 bind 失败
+      # （`netsh interface ipv4 show excludedportrange protocol=tcp` 可查；此时在 .env 里改 BACKEND_PORT）
+      - "${BACKEND_PORT:-8000}:8000"
     command: ["sh", "-c", "alembic upgrade head && python -m scripts.seed_all && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     depends_on:
       postgres:

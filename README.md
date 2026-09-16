@@ -55,11 +55,13 @@
 
 1. 可选：`Copy-Item .env.example .env` 并修改 `PG_PWD` / `JWT_SECRET`（不创建也能跑，默认值仅供本机演示）
 2. `docker compose up -d --build`
-3. 打开 http://localhost:8090 ，用 `demo / Demo123456` 登录（后端容器启动时自动执行迁移 + `scripts.seed_all`）
-4. 排障：`docker compose ps` 看健康状态；`docker compose logs -f backend` 看启动日志；`http://localhost:8000/docs` 看 Swagger
+3. 打开 http://localhost:8890 ，用 `demo / Demo123456` 登录（后端容器启动时自动执行迁移 + `scripts.seed_all`）。端口以 `.env` 的 `FRONTEND_PORT` 为准（本机默认 8890，避开 Windows 保留段；见第 6 条）
+4. 排障：`docker compose ps` 看健康状态；`docker compose logs -f backend` 看启动日志；`http://localhost:8900/docs` 看 Swagger（以 `.env` 的 `BACKEND_PORT` 为准）
    - 后端日志统一格式（`时间 级别 logger: 消息`）输出到 stdout：MCP 测试连接/调用、工具执行失败、对话生成异常、未处理异常堆栈都会落在这里；级别用 `LOG_LEVEL` 环境变量调整（默认 INFO）
 5. 停止：`docker compose down`（保留数据卷）；`docker compose down -v` 清空数据库与上传文件
-6. 端口冲突：前端默认映射 **8090**（`.env` 的 `FRONTEND_PORT` 可改）。若打开浏览器看到的是别的程序（例如 Steam 的 `CEF remote debugging` 页面），说明 8080 之类端口被占用——改 `FRONTEND_PORT` 后 `docker compose up -d frontend` 重建即可
+6. 端口冲突：前端默认映射 **8090**、后端默认映射 **8000**，两者都可用 `.env` 的 `FRONTEND_PORT` / `BACKEND_PORT` 覆盖。
+   - 若打开浏览器看到的是别的程序（例如 Steam 的 `CEF remote debugging` 页面），说明该端口被占用；
+   - 若 `docker compose up` 报 `ports are not available ... bind: An attempt was made to access a socket in a way forbidden by its access permissions`，说明端口落在 **Windows 保留段**（Hyper-V/WinNAT）。查一下：`netsh interface ipv4 show excludedportrange protocol=tcp`，然后在 `.env` 里把 `BACKEND_PORT` / `FRONTEND_PORT` 改到保留段之外（例如 8900 / 8890），再 `docker compose up -d`。
 
 架构总览：
 
@@ -92,7 +94,7 @@ flowchart LR
 
 ## 快速开始（本地开发）
 
-与「一键启动」二选一：本地开发流前端跑 5173、后端跑 8000，只需用 compose 起 postgres 与 redis（不要直接 `docker compose up` 全量起，会占用 8000/8090 端口）。
+与「一键启动」二选一：本地开发流前端跑 5173、后端跑 `BACKEND_PORT`（默认 8000，可用 `.env` 覆盖；端口落在 Windows 保留段时会被拒绝绑定），只需用 compose 起 postgres 与 redis（不要直接 `docker compose up` 全量起，会占用后端/前端宿主端口）。
 
 1. 安装依赖：Docker Desktop、Ollama（`OLLAMA_MODELS` 指向数据盘）、uv（Python 3.12+）、Node 20+ / pnpm
 2. 拉取模型：`ollama pull qwen2.5:7b-instruct-q4_K_M`；M4 演示另需 `ollama pull deepseek-r1:latest` 与 `ollama pull qwen2.5vl:7b`（调度器按需加载，显存不足时自动换出）

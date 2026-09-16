@@ -9,6 +9,8 @@ def test_compose_declares_full_stack():
         assert f"\n  {service}" in text
     assert "host.docker.internal:host-gateway" in text
     assert "alembic upgrade head" in text and "scripts.seed_all" in text
+    # 后端宿主端口可配置（默认 8000；部分 Windows 机器把 8000 划进保留段时会 bind 失败）
+    assert "BACKEND_PORT:-8000" in text
     # 前端宿主端口可配置（默认 8090，避开常被 Steam 等占用的 8080）
     assert "FRONTEND_PORT:-8090" in text
 
