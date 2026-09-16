@@ -9,12 +9,13 @@ from app.ai.rag.splitter import split_text
 from app.models import Chunk, Document, KnowledgeBase, User
 
 
-def test_splitter_prefers_headings_and_overlaps():
+def test_splitter_leading_heading_block_stays_first_within_size_limit():
+    # 首节（含标题行）原样作为第一块，后续内容在 size 硬上限内切分
     text = "# 标题一\n第一段内容。" * 1 + "\n\n" + "第二段。" * 200
     chunks = split_text(text, size=100, overlap=10)
     assert len(chunks) >= 2
     assert chunks[0].startswith("# 标题一")
-    assert all(len(c) <= 130 for c in chunks)  # 允许切分余量
+    assert all(len(c) <= 100 for c in chunks)
 
 
 def test_splitter_hard_split():

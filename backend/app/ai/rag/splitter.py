@@ -46,11 +46,15 @@ def _recursive_split(
             current = piece
     if current:
         chunks.append(current)
+    # 防御网：pieces 全为空（例如文本仅由分隔符组成）时退回硬切，避免返回空列表丢掉内容
     return chunks or _hard_split(text, size, overlap)
 
 
 def split_text(text: str, size: int = 512, overlap: int = 64) -> list[str]:
-    """纯文本递归切分（段落 → 行 → 句末标点 → 空格 → 硬切）。"""
+    """纯文本递归切分：段落 → 行 → 句末标点（。！？；）→ 空格 → 硬切。
+
+    每块长度 <= size；overlap 仅在降到硬切时生效（按分隔符断开的块不重叠）。
+    """
     normalized = text.replace("\r\n", "\n").strip()
     if not normalized:
         return []

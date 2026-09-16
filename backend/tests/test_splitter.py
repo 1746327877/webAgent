@@ -19,6 +19,20 @@ def test_falls_back_to_hard_split():
     assert all(len(c) <= 100 for c in chunks)
 
 
+def test_hard_split_honors_overlap():
+    # overlap 只在硬切路径生效（有分隔符时按分隔符断，不用 overlap）
+    # 用数字构造无分隔符输入：全同字符会让 overlap 断言恒真，起不到验证作用
+    text = "".join(str(i % 10) for i in range(250))
+    chunks = split_text(text, size=100, overlap=20)
+    # 步长 = size - overlap = 80 → 起点 0/80/160/240，最后一块自然收短
+    assert [len(c) for c in chunks] == [100, 100, 90, 10]
+    assert chunks[0] == text[:100] and chunks[1] == text[80:180]
+    # 相邻块共享 20 字重叠（末块只剩 10 字可重叠）
+    assert chunks[0][-20:] == chunks[1][:20]
+    assert chunks[1][-20:] == chunks[2][:20]
+    assert chunks[2][-10:] == chunks[3]
+
+
 def test_markdown_does_not_cross_sections():
     text = "# 第一章\n" + "甲" * 300 + "\n\n# 第二章\n" + "乙" * 300
     chunks = split_markdown(text, size=100, overlap=0)
