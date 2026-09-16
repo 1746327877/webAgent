@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAgents } from "@/api/agents";
+import AgentAvatar from "@/components/agents/AgentAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,7 +28,13 @@ export default function AgentsPage() {
             <Link key={a.id} to={`/agents/${a.id}`} className="block">
               <Card className="h-full transition-colors hover:bg-accent/40">
                 <CardContent className="flex items-start gap-3">
-                  <span className="text-2xl leading-none">{a.emoji}</span>
+                  <AgentAvatar
+                    agentId={a.id}
+                    name={a.name}
+                    hasAvatar={a.has_avatar}
+                    version={a.updated_at}
+                    className="size-9 text-lg"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{a.name}</p>
                     <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">

@@ -62,6 +62,18 @@ vi.mock("@/api/agents", () => ({
   }),
   useAgents: () => ({ data: mockState.agents }),
   useModels: () => ({ data: mockState.models }),
+  // ChatView 用它把 AgentItem 收敛成"头像 + 名字"的精简展示对象
+  toAgentBadge: (agent: {
+    id: string;
+    name: string;
+    has_avatar?: boolean;
+    updated_at?: string;
+  }) => ({
+    id: agent.id,
+    name: agent.name,
+    has_avatar: agent.has_avatar,
+    updated_at: agent.updated_at,
+  }),
 }));
 
 // 流式事件按序同步派发后挂起，便于断言叠加层渲染（结束后会被 clearActive 清掉）
@@ -367,8 +379,11 @@ test("助手消息显示智能体徽标与接力标签", async () => {
     { id: "a2", name: "乙", emoji: "🅱" },
   ];
   renderAt("s1");
-  expect(await screen.findByText("甲")).toBeInTheDocument();
-  expect(await screen.findByText(/接力.*乙/)).toBeInTheDocument();
+  // 名字会同时出现在徽标文字与"名字首字"头像里，因此用 findAllByText
+  expect((await screen.findAllByText("甲")).length).toBeGreaterThan(0);
+  // 接力标签与名字分属不同元素，分别断言（可能有多个接力消息）
+  expect((await screen.findAllByText(/接力/)).length).toBeGreaterThan(0);
+  expect(screen.getAllByText("乙").length).toBeGreaterThan(0);
   expect(screen.getByRole("link", { name: "查看调用链" })).toHaveAttribute(
     "href",
     "/admin/sessions/s1",

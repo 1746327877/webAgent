@@ -29,6 +29,8 @@ async def engine():
     eng = create_async_engine(settings.test_database_url, poolclass=NullPool)
     async with eng.begin() as c:
         await c.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        # 先 drop 再 create：create_all 不会给已存在的表补列，模型加字段后需要重建
+        await c.run_sync(Base.metadata.drop_all)
         await c.run_sync(Base.metadata.create_all)
     yield eng
     await eng.dispose()

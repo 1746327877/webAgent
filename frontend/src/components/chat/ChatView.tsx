@@ -8,7 +8,8 @@ import {
   type Block,
   type MessageItemData,
 } from "@/api/sessions";
-import { useAgent, useAgents, useModels } from "@/api/agents";
+import { useAgent, useAgents, useModels, toAgentBadge } from "@/api/agents";
+import AgentAvatar from "@/components/agents/AgentAvatar";
 import { apiFetch } from "@/lib/api";
 import { streamRequest } from "@/lib/stream";
 import { createTokenBuffer } from "@/lib/tokenBuffer";
@@ -69,6 +70,8 @@ export default function ChatView() {
   };
   const defaultModelLabel = defaultModel(agent) ?? defaultModel(agents[0]) ?? "默认模型";
   const agentById = new Map(agents.map((a) => [a.id, a]));
+  // 提及下拉/消息徽标只需要头像与名字，避免整份 AgentItem 透传
+  const agentBadges = agents.map(toAgentBadge);
   const {
     active,
     error,
@@ -325,7 +328,17 @@ export default function ChatView() {
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 px-4 py-10">
           <div className="text-center">
-            <div className="text-5xl">{landingAgent?.emoji ?? "💬"}</div>
+            {landingAgent ? (
+              <AgentAvatar
+                agentId={landingAgent.id}
+                name={landingAgent.name}
+                hasAvatar={landingAgent.has_avatar}
+                version={landingAgent.updated_at}
+                className="mx-auto size-16 text-2xl"
+              />
+            ) : (
+              <div className="text-5xl">💬</div>
+            )}
             <h1 className="mt-3 text-2xl font-semibold tracking-tight">
               {landingAgent ? landingAgent.name : "开始新的对话"}
             </h1>
@@ -338,7 +351,7 @@ export default function ChatView() {
               onSend={send}
               onStop={stop}
               generating={ownsActive}
-              agents={agents}
+              agents={agentBadges}
               attachments={attachments}
               onAttach={attach}
               onRemoveAttachment={removeAttachment}
@@ -405,8 +418,10 @@ export default function ChatView() {
     ...(streamingMessage ? [streamingMessage] : []),
   ];
   // 流式叠加层属于当前回合（会话主智能体）；历史消息按 agent_id 映射归属
-  const messageAgent = (m: MessageItemData) =>
-    m.status === "streaming" ? agent : m.agent_id ? agentById.get(m.agent_id) : undefined;
+  const messageAgent = (m: MessageItemData) => {
+    const owner = m.status === "streaming" ? agent : m.agent_id ? agentById.get(m.agent_id) : undefined;
+    return owner ? toAgentBadge(owner) : undefined;
+  };
   const messageIsRelay = (m: MessageItemData) =>
     Boolean(m.agent_id && m.agent_id !== session?.agent_id);
   // 空会话（无消息、无流式叠加、无乐观消息）且有智能体时展示欢迎区
@@ -423,7 +438,13 @@ export default function ChatView() {
             </span>
             {agent && (
               <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                <span>{agent.emoji}</span>
+                <AgentAvatar
+                  agentId={agent.id}
+                  name={agent.name}
+                  hasAvatar={agent.has_avatar}
+                  version={agent.updated_at}
+                  className="size-4 text-[9px]"
+                />
                 <span>{agent.name}</span>
               </span>
             )}
@@ -437,7 +458,13 @@ export default function ChatView() {
         )}
         {showWelcome && agent ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-            <div className="text-4xl">{agent.emoji}</div>
+            <AgentAvatar
+              agentId={agent.id}
+              name={agent.name}
+              hasAvatar={agent.has_avatar}
+              version={agent.updated_at}
+              className="size-14 text-xl"
+            />
             <div>
               <p className="font-medium">{agent.name}</p>
               <p className="mt-1 text-sm text-muted-foreground">{agent.welcome_msg || "开始对话吧"}</p>
@@ -478,7 +505,7 @@ export default function ChatView() {
           onSend={send}
           onStop={stop}
           generating={ownsActive}
-          agents={agents}
+          agents={agentBadges}
           attachments={attachments}
           onAttach={attach}
           onRemoveAttachment={removeAttachment}

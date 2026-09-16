@@ -60,6 +60,7 @@ const AGENT = {
   skill_slugs: [],
   mcp_tools: [],
   kb_bindings: [],
+  has_avatar: false,
   created_at: "t",
   updated_at: "t",
 };

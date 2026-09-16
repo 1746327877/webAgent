@@ -1,10 +1,18 @@
-import { useMemo, useState } from "react";
-import { useModels, type AgentItem, type ModelInfo } from "@/api/agents";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useDeleteAgentAvatar,
+  useModels,
+  useUploadAgentAvatar,
+  type AgentItem,
+  type ModelInfo,
+} from "@/api/agents";
+import AgentAvatar from "@/components/agents/AgentAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/stores/toast";
 
 const VARIABLE_RE = /\{\{\s*([\w.]+)\s*\}\}/g;
 
@@ -16,6 +24,11 @@ export interface AgentFormProps {
   initial?: Partial<AgentItem>;
   onSubmit: (payload: Partial<AgentItem>) => void;
   saving?: boolean;
+  /**
+   * 新建态：把选中的头像文件交给外层（创建成功后再上传）；
+   * 不传则在编辑态就地上传。
+   */
+  onAvatarChange?: (file: File | null) => void;
 }
 
 function toNumber(value: unknown): number {
@@ -71,10 +84,19 @@ function ModelToolHint({ model, models }: { model: string; models: ModelInfo[] }
   );
 }
 
-export default function AgentForm({ initial, onSubmit, saving = false }: AgentFormProps) {
+export default function AgentForm({
+  initial,
+  onSubmit,
+  saving = false,
+  onAvatarChange,
+}: AgentFormProps) {
   const { data: models } = useModels();
+  const uploadAvatar = useUploadAgentAvatar();
+  const deleteAvatar = useDeleteAgentAvatar();
   const [name, setName] = useState(initial?.name ?? "");
-  const [emoji, setEmoji] = useState(initial?.emoji ?? "🤖");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [description, setDescription] = useState(initial?.description ?? "");
   const [tagsText, setTagsText] = useState((initial?.tags ?? []).join("，"));
   const [systemPrompt, setSystemPrompt] = useState(initial?.system_prompt ?? "");
@@ -88,6 +110,55 @@ export default function AgentForm({ initial, onSubmit, saving = false }: AgentFo
     num_ctx: 8192,
     ...(initial?.model_config ?? {}),
   }));
+
+  // 卸载时释放本地预览 URL，避免泄漏
+  useEffect(
+    () => () => {
+      setAvatarPreview((url) => {
+        if (url) URL.revokeObjectURL(url);
+        return null;
+      });
+    },
+    [],
+  );
+
+  function onPickAvatar(file: File) {
+    const url = URL.createObjectURL(file);
+    setAvatarPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
+    setAvatarFile(file);
+    if (onAvatarChange) {
+      onAvatarChange(file);
+      return;
+    }
+    // 编辑态：头像独立于表单，选完即上传
+    if (initial?.id) {
+      void uploadAvatar
+        .mutateAsync({ id: initial.id, file })
+        .then(() => toast.success("头像已更新"))
+        .catch((err) => toast.error(err instanceof Error ? err.message : "头像上传失败"));
+    }
+  }
+
+  function onRemoveAvatar() {
+    setAvatarPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setAvatarFile(null);
+    if (onAvatarChange) {
+      onAvatarChange(null);
+      return;
+    }
+    if (initial?.id && initial.has_avatar) {
+      void deleteAvatar
+        .mutateAsync(initial.id)
+        .then(() => toast.success("头像已移除"))
+        .catch((err) => toast.error(err instanceof Error ? err.message : "移除头像失败"));
+    }
+  }
 
   const variables = useMemo(() => extractVariables(systemPrompt), [systemPrompt]);
   const model = typeof config.model === "string" ? config.model : "";
@@ -109,7 +180,6 @@ export default function AgentForm({ initial, onSubmit, saving = false }: AgentFo
     if (!trimmedName || saving) return;
     onSubmit({
       name: trimmedName,
-      emoji: emoji.trim() || "🤖",
       description: description.trim(),
       tags: splitComma(tagsText).slice(0, 5),
       system_prompt: systemPrompt,
@@ -128,12 +198,57 @@ export default function AgentForm({ initial, onSubmit, saving = false }: AgentFo
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-[7rem_1fr]">
+      <div className="flex items-center gap-3">
+        <AgentAvatar
+          agentId={initial?.id}
+          name={name || "新智能体"}
+          hasAvatar={Boolean(initial?.has_avatar)}
+          version={initial?.updated_at}
+          previewUrl={avatarPreview ?? undefined}
+          className="size-12 text-lg"
+        />
         <div className="space-y-1">
-          <label htmlFor="agent-emoji" className="text-sm">Emoji</label>
-          <Input id="agent-emoji" value={emoji} maxLength={8}
-                 onChange={(e) => setEmoji(e.target.value)} />
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={uploadAvatar.isPending || deleteAvatar.isPending}
+            >
+              上传头像
+            </Button>
+            {(avatarFile || avatarPreview || initial?.has_avatar) && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={onRemoveAvatar}
+                disabled={uploadAvatar.isPending || deleteAvatar.isPending}
+              >
+                移除
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            不上传时用「名字第一个字」作为头像（png/jpg/webp，≤ 2MB）
+          </p>
         </div>
+        <input
+          ref={avatarInputRef}
+          type="file"
+          aria-label="上传头像"
+          accept=".png,.jpg,.jpeg,.webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = ""; // 允许连续选择同一文件
+            if (file) onPickAvatar(file);
+          }}
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-[1fr]">
         <div className="space-y-1">
           <label htmlFor="agent-name" className="text-sm">名称</label>
           <Input id="agent-name" value={name} maxLength={64} placeholder="例如：代码专家"

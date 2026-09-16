@@ -12,6 +12,8 @@ const models = vi.hoisted(() => ({
 vi.mock("@/api/agents", () => ({
   useModels: () => ({ data: models.list }),
   useTools: () => ({ data: [] }),
+  useUploadAgentAvatar: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteAgentAvatar: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 beforeEach(() => {

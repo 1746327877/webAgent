@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import type { AgentBadge } from "@/api/agents";
 import type { MessageItemData } from "@/api/sessions";
 import MessageItem from "@/components/chat/MessageItem";
 import type { Citation } from "@/lib/citations";
@@ -11,7 +12,7 @@ interface Props {
   sessionKey?: string;
   renderActions: (m: MessageItemData) => ReactNode;
   onOpenCitation?: (citation: Citation) => void;
-  agentOf?: (m: MessageItemData) => { emoji: string; name: string } | undefined;
+  agentOf?: (m: MessageItemData) => AgentBadge | undefined;
   isRelayOf?: (m: MessageItemData) => boolean;
   /** 高吞吐降级：流式 text 块纯文本渲染 */
   degraded?: boolean;

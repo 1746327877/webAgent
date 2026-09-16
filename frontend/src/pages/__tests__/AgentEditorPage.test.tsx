@@ -90,6 +90,8 @@ vi.mock("@/api/agents", () => ({
   useSetAgentKbs: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAgentVersions: () => ({ data: [], isLoading: false, error: null }),
   useRollbackAgent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUploadAgentAvatar: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteAgentAvatar: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 import AgentEditorPage from "@/pages/AgentEditorPage";

@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import type { AgentBadge } from "@/api/agents";
 import type { Block, MessageItemData } from "@/api/sessions";
+import AgentAvatar from "@/components/agents/AgentAvatar";
 import BlockRenderer from "@/components/chat/BlockRenderer";
 import CitationList from "@/components/chat/CitationList";
 import type { Citation } from "@/lib/citations";
@@ -48,7 +50,7 @@ export default function MessageItem({
   message: MessageItemData;
   actions?: ReactNode;
   onOpenCitation?: (citation: Citation) => void;
-  agent?: { emoji: string; name: string };
+  agent?: AgentBadge;
   isRelay?: boolean;
   /** 高吞吐降级：流式 text 块纯文本渲染 */
   degraded?: boolean;
@@ -92,9 +94,16 @@ export default function MessageItem({
   return (
     <div className="space-y-1">
       {agent && (
-        <p className="mb-1 text-xs text-muted-foreground">
+        <p className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
           {isRelay ? "接力 · " : ""}
-          <span>{agent.emoji}</span> {agent.name}
+          <AgentAvatar
+            agentId={agent.id}
+            name={agent.name}
+            hasAvatar={agent.has_avatar}
+            version={agent.updated_at}
+            className="size-4 text-[9px]"
+          />
+          <span>{agent.name}</span>
         </p>
       )}
       {message.blocks.map((b, i) => {

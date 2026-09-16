@@ -10,6 +10,7 @@ import {
 } from "@/api/sessions";
 import { useAgents } from "@/api/agents";
 import { groupByDate } from "@/lib/time";
+import AgentAvatar from "@/components/agents/AgentAvatar";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -223,7 +224,14 @@ export default function SessionSidebar() {
             <DropdownMenuContent align="end">
               {agents.map((agent) => (
                 <DropdownMenuItem key={agent.id} onClick={() => onNewAgent(agent.id)}>
-                  {agent.emoji} {agent.name}
+                  <AgentAvatar
+                    agentId={agent.id}
+                    name={agent.name}
+                    hasAvatar={agent.has_avatar}
+                    version={agent.updated_at}
+                    className="size-4 text-[9px]"
+                  />
+                  {agent.name}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

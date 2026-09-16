@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_current_user
 from app.core.config import settings
 from app.core.db import get_db
+from app.core.upload_rules import IMAGE_EXTS, MIME_BY_EXT, has_valid_image_magic
 from app.models import Attachment
 from app.models.session import Session
 from app.models.user import User
@@ -18,30 +19,11 @@ from app.services import session_service
 
 router = APIRouter(tags=["attachments"])
 
-IMAGE_EXTS = {"png", "jpg", "jpeg", "webp"}
 # 文档走文本提取注入，与知识库上传的类型保持一致（额外放宽 markdown 后缀）
 DOCUMENT_EXTS = {"pdf", "md", "markdown", "txt", "docx"}
 ALLOWED_EXTS = IMAGE_EXTS | DOCUMENT_EXTS
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
-MIME_BY_EXT = {
-    "png": "image/png",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "webp": "image/webp",
-    "pdf": "application/pdf",
-    "md": "text/markdown",
-    "markdown": "text/markdown",
-    "txt": "text/plain",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
-# 魔数前缀粗校验：扩展名与实际内容明显不符时拒绝（不做完整图片解码；文档无稳定魔数不校验）
-MAGIC_PREFIXES = {
-    "png": (b"\x89PNG",),
-    "jpg": (b"\xff\xd8\xff",),
-    "jpeg": (b"\xff\xd8\xff",),
-    "webp": (b"RIFF",),
-}
 
 
 class AttachmentOut(BaseModel):
@@ -81,7 +63,7 @@ async def upload_attachment(
     content = await file.read()
     if len(content) > max_bytes:
         raise HTTPException(status_code=413, detail=_too_large_detail(is_image))
-    if is_image and not any(content.startswith(prefix) for prefix in MAGIC_PREFIXES[ext]):
+    if is_image and not has_valid_image_magic(content, ext):
         raise HTTPException(status_code=415, detail="文件内容与图片类型不符")
 
     stored_name = f"{uuid.uuid4()}.{ext}"

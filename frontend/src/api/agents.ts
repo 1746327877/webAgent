@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiFetch, apiJson } from "@/lib/api";
+import { apiErrorMessage, apiFetch, apiJson } from "@/lib/api";
 
 export interface KbBinding {
   kb_id: string;
@@ -31,6 +31,7 @@ export interface AgentItem {
   skill_slugs: string[];
   mcp_tools: McpToolBinding[];
   kb_bindings: KbBinding[];
+  has_avatar: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -38,6 +39,18 @@ export interface AgentItem {
 export interface McpToolBinding {
   mcp_server_id: string;
   tool_name: string;
+}
+
+/** 展示用精简智能体信息（头像 + 名字），供消息徽标/提及列表等复用 */
+export type AgentBadge = Pick<AgentItem, "id" | "name" | "has_avatar" | "updated_at">;
+
+export function toAgentBadge(agent: AgentItem): AgentBadge {
+  return {
+    id: agent.id,
+    name: agent.name,
+    has_avatar: agent.has_avatar,
+    updated_at: agent.updated_at,
+  };
 }
 
 export interface ToolInfo {
@@ -121,6 +134,45 @@ export function useTools() {
   return useQuery({
     queryKey: ["tools"],
     queryFn: () => apiJson<ToolInfo[]>("/api/v1/tools"),
+  });
+}
+
+/** 上传/替换智能体头像（图片 ≤ 2MB；替换时后端删除旧文件） */
+export function useUploadAgentAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await apiFetch(`/api/v1/agents/${id}/avatar`, { method: "POST", body: form });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(apiErrorMessage(body, res.status));
+      }
+      return (await res.json()) as AgentItem;
+    },
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["agents", id] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+/** 移除智能体头像（前端随即回退到"名字首字"） */
+export function useDeleteAgentAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiFetch(`/api/v1/agents/${id}/avatar`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(apiErrorMessage(body, res.status));
+      }
+    },
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["agents", id] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
   });
 }
 

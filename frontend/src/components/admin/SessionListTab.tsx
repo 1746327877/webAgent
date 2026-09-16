@@ -20,7 +20,7 @@ export default function SessionListTab() {
     () => data?.pages.flatMap((page) => page.items) ?? [],
     [data],
   );
-  const agentName = new Map(agents.map((a) => [a.id, `${a.emoji} ${a.name}`]));
+  const agentName = new Map(agents.map((a) => [a.id, a.name]));
   const filtered = useMemo(
     () => (agentFilter ? sessions.filter((s) => s.agent_id === agentFilter) : sessions),
     [sessions, agentFilter],
@@ -52,7 +52,7 @@ export default function SessionListTab() {
           <option value="">全部（{sessions.length}）</option>
           {agents.map((agent) => (
             <option key={agent.id} value={agent.id}>
-              {agent.emoji} {agent.name}
+              {agent.name}
             </option>
           ))}
         </select>

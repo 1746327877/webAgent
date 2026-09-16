@@ -17,6 +17,8 @@ class Agent(Base):
     )
     name: Mapped[str] = mapped_column(String(64))
     emoji: Mapped[str] = mapped_column(String(8), default="🤖", server_default="🤖")
+    # 头像落盘文件名（{uuid}.{ext}，落在 settings.upload_dir）；为空时前端用"名字首字"兜底
+    avatar_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, server_default="{}")
     system_prompt: Mapped[str] = mapped_column(Text, default="", server_default="")

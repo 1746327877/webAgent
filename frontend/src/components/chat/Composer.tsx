@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Paperclip, Square } from "lucide-react";
+import AgentAvatar from "@/components/agents/AgentAvatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,7 +10,8 @@ import { cn } from "cn";
 interface MentionAgent {
   id: string;
   name: string;
-  emoji: string;
+  has_avatar?: boolean;
+  updated_at?: string;
 }
 
 export interface PendingAttachment {
@@ -284,7 +286,13 @@ export default function Composer({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => select(a)}
                 >
-                  <span>{a.emoji}</span>
+                  <AgentAvatar
+                    agentId={a.id}
+                    name={a.name}
+                    hasAvatar={a.has_avatar}
+                    version={a.updated_at}
+                    className="size-4 text-[9px]"
+                  />
                   <span>{a.name}</span>
                 </Button>
               ))}

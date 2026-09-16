@@ -60,6 +60,8 @@ class AgentOut(BaseModel):
     skill_slugs: list[str] = []
     mcp_tools: list[dict] = []
     kb_bindings: list[dict] = []
+    # 是否已上传头像；前端据此决定拉取图片还是退回"名字首字"
+    has_avatar: bool = False
     created_at: datetime
     updated_at: datetime
 
