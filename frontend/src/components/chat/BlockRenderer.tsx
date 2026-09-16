@@ -69,43 +69,18 @@ export default function BlockRenderer({
   if (block.type === "tool_result") {
     const ok = block.status === "ok";
     const links = asLinkUrls(block.links);
-    // <img src> 只认 http(s)：weixin:// 这类协议不是图片资源，放进去只会裂图
-    const images = asHttpUrls(block.images);
     return (
-      <div className="my-1">
-        <details className="rounded border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-muted-foreground">
-            {ok ? "✅" : "⚠️"} {block.tool ? `${String(block.tool)} · ` : ""}
-            {String(block.elapsed_ms ?? "")}ms
-            {!ok ? " · 失败" : ""}
-          </summary>
-          <p className="mt-1 whitespace-pre-wrap opacity-80">
-            <LinkifiedText text={String(block.preview ?? "")} />
-          </p>
-        </details>
-        {/* 图片与链接是用户真正要的结果，放折叠区外直接可见，不必先「展开」 */}
-        {images.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {images.map((url) => (
-              <a
-                key={url}
-                href={url}
-                target="_blank"
-                rel="noreferrer noopener"
-                title={`${url}（在新标签页打开）`}
-              >
-                <img
-                  src={url}
-                  alt="工具返回图片"
-                  loading="lazy"
-                  className="h-24 w-24 rounded-md border object-cover"
-                />
-              </a>
-            ))}
-          </div>
-        )}
+      <details className="my-1 rounded border px-3 py-2 text-xs">
+        <summary className="cursor-pointer text-muted-foreground">
+          {ok ? "✅" : "⚠️"} {block.tool ? `${String(block.tool)} · ` : ""}
+          {String(block.elapsed_ms ?? "")}ms
+          {!ok ? " · 失败" : ""}
+        </summary>
+        <p className="mt-1 whitespace-pre-wrap opacity-80">
+          <LinkifiedText text={String(block.preview ?? "")} />
+        </p>
         {links.length > 0 && (
-          <ul className="mt-1 space-y-0.5 text-xs">
+          <ul className="mt-1 space-y-0.5">
             {links.map((url) => (
               <li key={url} className="truncate">
                 <ToolLink url={url} />
@@ -113,7 +88,7 @@ export default function BlockRenderer({
             ))}
           </ul>
         )}
-      </div>
+      </details>
     );
   }
   return null; // citation 块由 MessageItem 统一渲染为 CitationList
@@ -164,12 +139,6 @@ function LinkifiedText({ text }: { text: string }) {
       )}
     </>
   );
-}
-
-/** 只接受 http(s) URL，避免把脏数据/相对路径渲染成可点击链接（`<img src>` 用） */
-function asHttpUrls(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string" && isHttpUrl(item));
 }
 
 /** 工具结果里的链接：http(s) + 支付类自定义协议；白名单外的 scheme 一律丢弃 */

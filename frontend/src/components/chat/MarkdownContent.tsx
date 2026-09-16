@@ -129,6 +129,21 @@ export default function MarkdownContent({
 }) {
   const components: Components = {
     pre: PreBlock,
+    // 模型在回复里直接写 markdown 图片（工具给的二维码/生成图地址）时也能看到图
+    img: ({ node: _node, ...props }: ComponentPropsWithoutRef<"img"> & ExtraProps) => (
+      <a
+        href={typeof props.src === "string" ? props.src : ""}
+        target="_blank"
+        rel="noreferrer noopener"
+        title="在新标签页打开原图"
+      >
+        <img
+          {...props}
+          loading="lazy"
+          className={cn("my-1 max-h-80 w-auto rounded-md border bg-white", props.className)}
+        />
+      </a>
+    ),
     a: ({ node: _node, ...props }: ComponentPropsWithoutRef<"a"> & ExtraProps) => {
       const href = typeof props.href === "string" ? props.href : "";
       if (href.startsWith(CITATION_PREFIX)) {

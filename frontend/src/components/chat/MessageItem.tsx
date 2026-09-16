@@ -4,6 +4,7 @@ import type { Block, MessageItemData } from "@/api/sessions";
 import AgentAvatar from "@/components/agents/AgentAvatar";
 import BlockRenderer from "@/components/chat/BlockRenderer";
 import CitationList from "@/components/chat/CitationList";
+import ToolArtifacts from "@/components/chat/ToolArtifacts";
 import type { Citation } from "@/lib/citations";
 import { useAttachmentUrl } from "@/lib/useAttachmentUrl";
 
@@ -91,6 +92,11 @@ export default function MessageItem({
   };
 
   const firstCitationIndex = message.blocks.findIndex((b) => b.type === "citation");
+  // 用于判断模型是否已在回复正文里自己给出了图片地址（给了就不重复展示）
+  const textContent = message.blocks
+    .filter((b) => b.type === "text")
+    .map((b) => String(b.content ?? ""))
+    .join("\n");
   return (
     <div className="space-y-1">
       {agent && (
@@ -115,6 +121,7 @@ export default function MessageItem({
         }
         return <BlockRenderer key={i} block={b} maxRef={maxRef} onCitation={openByRef} streaming={message.status === "streaming"} degraded={degraded && message.status === "streaming"} />;
       })}
+      <ToolArtifacts blocks={message.blocks} text={textContent} />
       {message.status === "error" && (
         <p className="text-sm text-red-500">
           生成失败，可点「重新生成」重试

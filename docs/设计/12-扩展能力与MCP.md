@@ -177,10 +177,11 @@ agent_mcp_tools
   - 图片判定：先看扩展名（png/jpg/jpeg/webp/gif/svg/bmp/ico），再看路径/查询语义（`qrcode`、`/image|img|photo|avatar|thumbnail|poster`、`?format=png`）——二维码接口常返回 `image/*` 却没有后缀（如 `open.lkcoffee.com/transfer/qrcode?token=…`）。
   - 可点击 scheme 白名单：`http(s)`、`weixin`、`alipay(s)`、`tel`、`mailto`；其余（`javascript:`、`data:`、`file:`）**不提取**，避免把不可信的工具输出变成注入面。
 - `tool_result` block（以及对应的 SSE 事件）在非空时附带 `links` / `images` 数组，前端无需依赖 preview。
-- 前端 `BlockRenderer`：`images` 渲染为缩略图（点击/新标签页打开），`links` 渲染为 `🔗` 链接列表。两者都放在 `tool_result` 的**折叠区之外**（该卡片默认折叠，结果是用户真正要的东西，不该藏在「展开」后面）；`preview` 纯文本里的 URL 也会被切成可点击片段（用户点到的往往是原文里那一个，而不是提取出来的清单）。
-  - `http(s)` 链接带 `<a target="_blank" rel="noreferrer noopener">`，**普通点击、Ctrl/⌘+点击、中键**都能跳转；自定义协议（`weixin://`）**不加 `target`**，直接交给系统协议处理器唤起客户端（加了反而可能先弹空白标签页）。`<img src>` 只认 `http(s)`。
+- 前端 `BlockRenderer`（工具调用卡片，默认折叠）：`summary` + `preview` 原文 + `🔗` 链接列表，链接属于「调用详情」留在卡片里；`preview` 纯文本里的 URL 会切成可点击片段（用户点到的往往是原文里那一个，而不是提取出来的清单）。
+  - `http(s)` 链接带 `<a target="_blank" rel="noreferrer noopener">`，**普通点击、Ctrl/⌘+点击、中键**都能跳转；自定义协议（`weixin://`）**不加 `target`**，直接交给系统协议处理器唤起客户端（加了反而可能先弹空白标签页）。
+- 前端 `ToolArtifacts`（挂在**助手回复下方**，由 `MessageItem` 汇总本条消息所有 `tool_result` 的 `images`）：图片是用户真正要的**结果**（支付二维码、生成图），要能在正经回复里看到，而不是藏在折叠的工具卡片里。去重、只保留 `http(s)`、最多 5 张；正文里已用 markdown 图片语法写出的地址不重复展示（`text.includes(url)`）；缩略图用 `object-contain` + `bg-white`，避免裁切/深色主题下二维码扫不出来。
 - 前端白名单过滤放在 `lib/linkify.ts`（与后端 `_URL_SCHEME` 对齐），代码块跳过逻辑抽到 `lib/plainText.ts`（与引用锚点 `lib/citations.ts` 共用）。**改 scheme 白名单时前后端两处都要改**。
-- markdown 正文：`lib/linkify.ts` 的 `autolinkBareUrls` 把裸的自定义协议包成 CommonMark autolink（`<weixin://…>`）——GFM 的自动链接只认 `http(s)`/`www`/邮箱，智能体直接写出来的支付链接否则只是死文本；同时 `MarkdownContent` 传入自定义 `urlTransform`，因为 react-markdown 默认只放行 `https?|ircs?|mailto|xmpp`，会把 `weixin://` 的 href 清成空字符串（表现就是「点了没反应」）。
+- markdown 正文（模型自己写的回复）：`autolinkBareUrls` 把裸的自定义协议包成 CommonMark autolink（`<weixin://…>`）——GFM 的自动链接只认 `http(s)`/`www`/邮箱，智能体直接写出来的支付链接否则只是死文本；`MarkdownContent` 传入自定义 `urlTransform`，因为 react-markdown 默认只放行 `https?|ircs?|mailto|xmpp`，会把 `weixin://` 的 href 清成空字符串（表现就是「点了没反应」）；另外覆盖了 `img` 渲染，模型按 markdown 图片语法给出的图也能直接看到。
 - 已知限制：图片是浏览器直连外链加载，不经过后端鉴权；要求鉴权的图片 URL 会加载失败（正文链接仍可点）。自定义协议能否唤起取决于本机是否装了对应客户端（微信未安装时点击无反应）。
 
 ## 12.7 测试

@@ -60,42 +60,7 @@ test("工具结果里的链接渲染为可点击 <a>（支持 Ctrl/⌘+点击新
   expect(link).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
 });
 
-test("工具结果里的图片 URL 渲染为缩略图链接", () => {
-  render(
-    <BlockRenderer
-      block={{
-        type: "tool_result",
-        id: "c1",
-        tool: "web_search",
-        status: "ok",
-        elapsed_ms: 12,
-        preview: "封面",
-        images: ["https://example.com/a.png"],
-      }}
-    />,
-  );
-  const img = screen.getByAltText("工具返回图片");
-  expect(img).toHaveAttribute("src", "https://example.com/a.png");
-  expect(screen.getByRole("link", { name: /图片/ }).tagName).toBe("A");
-});
-
-test("工具产出的图片直接展示，不藏在折叠区里", () => {
-  render(
-    <BlockRenderer
-      block={{
-        type: "tool_result",
-        id: "c1",
-        status: "ok",
-        preview: "二维码",
-        images: ["https://open.lkcoffee.com/transfer/qrcode?token=abc"],
-      }}
-    />,
-  );
-  // tool_result 默认折叠；图片要是用户真正要的结果，必须在折叠区之外
-  expect(screen.getByAltText("工具返回图片").closest("details")).toBeNull();
-});
-
-test("工具原文里的支付链接可点击（无需展开折叠区）", () => {
+test("工具原文（折叠区里的 preview）中的支付链接可点击", () => {
   render(
     <BlockRenderer
       block={{
@@ -173,21 +138,6 @@ test("支付类自定义协议渲染为可点击 <a>，且不加 target", () => 
   const link = screen.getByRole("link", { name: /weixin:\/\/wxpay/ });
   expect(link).toHaveAttribute("href", "weixin://wxpay/bizpayurl?pr=5QQN6R31TEIEPv8M");
   expect(link).not.toHaveAttribute("target");
-});
-
-test("自定义协议不会被当成 <img> 渲染（避免裂图）", () => {
-  render(
-    <BlockRenderer
-      block={{
-        type: "tool_result",
-        id: "c1",
-        status: "ok",
-        preview: "x",
-        images: ["weixin://wxpay/bizpayurl?pr=abc.png"],
-      }}
-    />,
-  );
-  expect(screen.queryByAltText("工具返回图片")).not.toBeInTheDocument();
 });
 
 test("渲染 tool_result 状态与耗时", () => {

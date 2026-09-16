@@ -77,3 +77,71 @@ test("图片附件仍走鉴权 blob 渲染缩略图", async () => {
   expect(await screen.findByAltText("附件图片")).toHaveAttribute("src", "blob:mock");
   expect(fetchMock).toHaveBeenCalledWith("/api/v1/attachments/img1", expect.anything());
 });
+
+test("工具返回的图片展示在回复下方（不在工具卡片折叠区里）", () => {
+  render(
+    <MessageItem
+      message={makeMessage({
+        blocks: [
+          { type: "tool_call", id: "c1", tool: "lk_pay", args: "{}" },
+          {
+            type: "tool_result",
+            id: "r1",
+            tool: "lk_pay",
+            status: "ok",
+            preview: "订单已创建",
+            images: ["https://open.lkcoffee.com/transfer/qrcode?token=abc"],
+          },
+          { type: "text", content: "好的！订单已创建，请扫码支付。" },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByText("好的！订单已创建，请扫码支付。")).toBeInTheDocument();
+  const img = screen.getByAltText("工具返回图片");
+  expect(img).toHaveAttribute("src", "https://open.lkcoffee.com/transfer/qrcode?token=abc");
+  // 工具卡片默认折叠，图片必须挂在回复正文这一层
+  expect(img.closest("details")).toBeNull();
+});
+
+test("工具图片只保留 http(s) 且去重", () => {
+  render(
+    <MessageItem
+      message={makeMessage({
+        blocks: [
+          {
+            type: "tool_result",
+            id: "r1",
+            status: "ok",
+            preview: "x",
+            images: [
+              "weixin://wxpay/bizpayurl?pr=abc.png",
+              "javascript:alert(1)",
+              "https://a.com/q.png",
+              "https://a.com/q.png",
+            ],
+          },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getAllByAltText("工具返回图片")).toHaveLength(1);
+  expect(screen.getByAltText("工具返回图片")).toHaveAttribute("src", "https://a.com/q.png");
+});
+
+test("回复正文里已经写出的图片不重复展示", () => {
+  const url = "https://a.com/q.png";
+  render(
+    <MessageItem
+      message={makeMessage({
+        blocks: [
+          { type: "tool_result", id: "r1", status: "ok", preview: "x", images: [url] },
+          { type: "text", content: `扫码支付：![二维码](${url})` },
+        ],
+      })}
+    />,
+  );
+  // markdown 图片由正文渲染，下面不再重复来一份
+  expect(screen.getByAltText("二维码")).toBeInTheDocument();
+  expect(screen.queryByAltText("工具返回图片")).not.toBeInTheDocument();
+});
