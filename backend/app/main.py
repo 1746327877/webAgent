@@ -4,6 +4,8 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -86,6 +88,29 @@ async def http_metrics_middleware(request, call_next):
         raise
     collector.record(response.status_code, (time.perf_counter() - t0) * 1000)
     return response
+
+
+def _compact_validation_errors(errors: list[dict]) -> list[dict]:
+    """校验错误日志的紧凑形态：只留 loc/msg/type。
+
+    不能直接打 exc.errors()——它带 `input`（原样回显请求体）与 `ctx`，
+    既会刷屏（上千个 id），也可能把敏感字段写进日志。
+    """
+    compact: list[dict] = []
+    for item in errors[:5]:
+        loc = ".".join(str(part) for part in item.get("loc", ()))
+        compact.append({"loc": loc, "msg": item.get("msg"), "type": item.get("type")})
+    return compact
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """请求校验失败（422）在进入业务逻辑前就返回，这里记带细节的日志便于排障。"""
+    errors = exc.errors()
+    logger.warning(
+        "请求校验失败 %s %s errors=%s", request.method, request.url.path, _compact_validation_errors(errors)
+    )
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
 
 @app.exception_handler(Exception)

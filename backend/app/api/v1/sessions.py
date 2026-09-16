@@ -1,3 +1,4 @@
+import logging
 import uuid
 from pathlib import Path
 from typing import Annotated
@@ -29,6 +30,8 @@ from app.schemas.session import (
 from app.services import message_service, session_service
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+logger = logging.getLogger("app.sessions")
 
 
 @router.post("", response_model=SessionOut, status_code=201)
@@ -91,6 +94,9 @@ async def bulk_delete_sessions(
 ):
     """多选删除：只删当前用户拥有的会话，返回实际删除条数。"""
     deleted = await session_service.delete_sessions(db, user, body.ids)
+    logger.info(
+        "批量删除会话 user=%s requested=%d deleted=%d", user.username, len(body.ids), deleted
+    )
     return {"deleted": deleted}
 
 

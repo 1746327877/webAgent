@@ -16,9 +16,9 @@ class SessionPatchIn(BaseModel):
 
 
 class SessionBulkDeleteIn(BaseModel):
-    """批量删除：上限 500 条，避免一次请求传过大的 id 列表。"""
+    """批量删除：单请求上限 1000 条（前端超过则分批），避免单次请求体过大。"""
 
-    ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
 
 
 class SessionOut(BaseModel):

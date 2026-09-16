@@ -44,11 +44,36 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   return res;
 }
 
+/** 把后端的 detail（string / FastAPI 校验数组 / 其它对象）转成可读文案 */
+export function apiErrorMessage(body: unknown, status: number): string {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  // FastAPI 422：detail 是 [{ loc, msg, type }]，直接 String() 会得到 [object Object]
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) =>
+        item && typeof item === "object" && "msg" in item
+          ? String((item as { msg: unknown }).msg)
+          : null,
+      )
+      .filter((text): text is string => Boolean(text));
+    if (messages.length > 0) return messages.join("；");
+  }
+  if (detail != null) {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      // 忽略：退回到状态码文案
+    }
+  }
+  return `HTTP ${status}`;
+}
+
 export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await apiFetch(path, init);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as { detail?: string }).detail ?? `HTTP ${res.status}`);
+    throw new Error(apiErrorMessage(body, res.status));
   }
   return (await res.json()) as T;
 }

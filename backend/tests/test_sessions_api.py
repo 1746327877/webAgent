@@ -136,3 +136,30 @@ async def test_bulk_delete_empty_ids_rejected(client, auth_headers):
         "/api/v1/sessions/bulk-delete", json={"ids": []}, headers=auth_headers
     )
     assert r.status_code == 422
+
+
+async def test_bulk_delete_up_to_1000_ids_allowed(client, auth_headers):
+    # 不存在的 id 一律忽略：用随机 id 验证"恰好到上限"能通过，避免逐条建会话拖慢用例
+    ids = [str(uuid.uuid4()) for _ in range(1000)]
+    r = await client.post(
+        "/api/v1/sessions/bulk-delete", json={"ids": ids}, headers=auth_headers
+    )
+    assert r.status_code == 200
+    assert r.json()["deleted"] == 0
+
+
+async def test_bulk_delete_over_limit_returns_422_and_logs(client, auth_headers, caplog):
+    import logging
+
+    ids = [str(uuid.uuid4()) for _ in range(1001)]
+    with caplog.at_level(logging.WARNING, logger="app"):
+        r = await client.post(
+            "/api/v1/sessions/bulk-delete", json={"ids": ids}, headers=auth_headers
+        )
+    assert r.status_code == 422
+    # 校验失败要留下可排障的日志（含路径与错误细节）
+    assert any("请求校验失败" in record.message for record in caplog.records)
+    assert any("/api/v1/sessions/bulk-delete" in record.message for record in caplog.records)
+    assert any("too_long" in record.message for record in caplog.records)
+    # 但不得回显请求体（上千 id 会刷屏，且可能把敏感字段写进日志）
+    assert not any(ids[0] in record.message for record in caplog.records)

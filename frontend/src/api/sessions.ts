@@ -99,15 +99,24 @@ export function useDeleteSession() {
   });
 }
 
-/** 多选删除：一次请求删多条（后端只删当前用户拥有的会话） */
+/** 多选删除：后端单请求上限 1000 条，超过则分批，最后汇总删除条数 */
+export const BULK_DELETE_CHUNK = 500;
+
 export function useBulkDeleteSessions() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (ids: string[]) =>
-      apiJson<{ deleted: number }>("/api/v1/sessions/bulk-delete", {
-        method: "POST",
-        body: JSON.stringify({ ids }),
-      }),
+    mutationFn: async (ids: string[]) => {
+      let deleted = 0;
+      for (let start = 0; start < ids.length; start += BULK_DELETE_CHUNK) {
+        const chunk = ids.slice(start, start + BULK_DELETE_CHUNK);
+        const res = await apiJson<{ deleted: number }>("/api/v1/sessions/bulk-delete", {
+          method: "POST",
+          body: JSON.stringify({ ids: chunk }),
+        });
+        deleted += res.deleted;
+      }
+      return { deleted };
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
   });
 }
