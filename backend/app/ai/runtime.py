@@ -28,10 +28,28 @@ MAX_TOOL_ROUNDS = 5
 TOOL_TIMEOUT_S = 30.0
 TOOL_RESULT_MAX = 8000
 TOOL_PREVIEW_LEN = 200
-# 工具结果里的 URL：图片按后缀识别，其余作为可点击链接；限量避免 block 膨胀
+# 工具结果里的 URL：图片按后缀/语义识别，其余作为可点击链接；限量避免 block 膨胀
 TOOL_LINK_MAX = 5
-_URL_RE = re.compile(r"https?://[^\s\"'<>()\[\]{}，。；、]+")
-_IMAGE_URL_RE = re.compile(r"\.(png|jpe?g|webp|gif|svg)(\?|#|$)", re.IGNORECASE)
+# 只提取白名单内的 scheme：支付类的自定义协议（weixin:// 微信支付、alipays:// 支付宝）
+# 在桌面端能唤起客户端，所以必须放行；而 javascript:/data:/file: 等一律不提取，
+# 否则不可信的工具输出就成了注入面（前端还有一层同样的白名单过滤）。
+_URL_SCHEME = r"https?|weixin|alipays?|tel|mailto"
+_URL_RE = re.compile(rf"(?:{_URL_SCHEME}):[^\s\"'<>()\[\]{{}}，。；、]+", re.IGNORECASE)
+# 图片判定之一：扩展名最可靠
+_IMAGE_EXT_RE = re.compile(r"\.(png|jpe?g|webp|gif|svg|bmp|ico)(\?|#|$)", re.IGNORECASE)
+# 图片判定之二：很多图片服务（二维码、头像、缩略图）不给后缀，用路径/查询语义兜底，
+# 例如 open.lkcoffee.com/transfer/qrcode?token=…（返回 image/* 但没有 .png）
+_IMAGE_HINT_RE = re.compile(
+    r"\bqrcode\b|\bqr_code\b"
+    r"|/(?:image|images|img|photo|photos|picture|pictures|avatar|thumbnail|poster)(?:[/?#]|$)"
+    r"|(?:[?&](?:format|type|fm)=[^&#]*(?:png|jpe?g|webp|gif|svg|image))",
+    re.IGNORECASE,
+)
+
+
+def is_image_url(url: str) -> bool:
+    """URL 是否指向图片：先看扩展名，再看路径/查询里的图片语义。"""
+    return bool(_IMAGE_EXT_RE.search(url) or _IMAGE_HINT_RE.search(url))
 
 
 def extract_tool_links(text: str) -> tuple[list[str], list[str]]:
@@ -46,7 +64,7 @@ def extract_tool_links(text: str) -> tuple[list[str], list[str]]:
         url = raw.rstrip(".,;:!?，。；：！？")  # 去掉粘在末尾的标点
         if not url:
             continue
-        bucket = images if _IMAGE_URL_RE.search(url) else links
+        bucket = images if is_image_url(url) else links
         if url not in bucket and len(bucket) < TOOL_LINK_MAX:
             bucket.append(url)
     return links, images

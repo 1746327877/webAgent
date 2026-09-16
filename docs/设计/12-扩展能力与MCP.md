@@ -173,10 +173,12 @@ agent_mcp_tools
 
 工具返回值里常有 URL（搜索结果的 `url`、图片直链等），但 `tool_result` 的 `preview` 只截 200 字，URL 常被截断。
 
-- 后端 `runtime.extract_tool_links(text)`：对**完整结果**做正则提取，按扩展名把图片（png/jpg/jpeg/webp/gif/svg）与普通链接分流；去重保序、各限 5 条；剥掉末尾标点。
+- 后端 `runtime.extract_tool_links(text)`：对**完整结果**做正则提取，把图片与普通链接分流；去重保序、各限 5 条；剥掉末尾标点。
+  - 图片判定：先看扩展名（png/jpg/jpeg/webp/gif/svg/bmp/ico），再看路径/查询语义（`qrcode`、`/image|img|photo|avatar|thumbnail|poster`、`?format=png`）——二维码接口常返回 `image/*` 却没有后缀（如 `open.lkcoffee.com/transfer/qrcode?token=…`）。
+  - 可点击 scheme 白名单：`http(s)`、`weixin`、`alipay(s)`、`tel`、`mailto`；其余（`javascript:`、`data:`、`file:`）**不提取**，避免把不可信的工具输出变成注入面。
 - `tool_result` block（以及对应的 SSE 事件）在非空时附带 `links` / `images` 数组，前端无需依赖 preview。
-- 前端 `BlockRenderer`：`images` 渲染为缩略图（点击/新标签页打开），`links` 渲染为 `🔗` 链接列表；均为 `<a target="_blank" rel="noreferrer noopener">`，因此**普通点击、Ctrl/⌘+点击、中键**都能正常跳转。只接受 `http(s)://`，脏值（`javascript:`、相对路径）不渲染成链接。
-- 已知限制：图片是浏览器直连外链加载，不经过后端鉴权；要求鉴权的图片 URL 会加载失败（正文链接仍可点）。
+- 前端 `BlockRenderer`：`images` 渲染为缩略图（点击/新标签页打开），`links` 渲染为 `🔗` 链接列表。`http(s)` 链接带 `<a target="_blank" rel="noreferrer noopener">`，**普通点击、Ctrl/⌘+点击、中键**都能跳转；自定义协议（`weixin://`）**不加 `target`**，直接交给系统协议处理器唤起客户端（加了反而可能先弹空白标签页）。前端再次按同一白名单过滤脏值；`<img src>` 只认 `http(s)`。
+- 已知限制：图片是浏览器直连外链加载，不经过后端鉴权；要求鉴权的图片 URL 会加载失败（正文链接仍可点）。自定义协议能否唤起取决于本机是否装了对应客户端（微信未安装时点击无反应）。
 
 ## 12.7 测试
 

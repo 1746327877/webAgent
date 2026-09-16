@@ -79,7 +79,7 @@ test("工具结果里的图片 URL 渲染为缩略图链接", () => {
   expect(screen.getByRole("link", { name: /图片/ }).tagName).toBe("A");
 });
 
-test("非 http(s) 的脏值不会被渲染成链接", () => {
+test("非白名单 scheme 的脏值不会被渲染成链接", () => {
   render(
     <BlockRenderer
       block={{
@@ -92,6 +92,39 @@ test("非 http(s) 的脏值不会被渲染成链接", () => {
     />,
   );
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
+});
+
+test("支付类自定义协议渲染为可点击 <a>，且不加 target", () => {
+  render(
+    <BlockRenderer
+      block={{
+        type: "tool_result",
+        id: "c1",
+        tool: "lk_pay",
+        status: "ok",
+        preview: "💳 支付方式",
+        links: ["weixin://wxpay/bizpayurl?pr=5QQN6R31TEIEPv8M"],
+      }}
+    />,
+  );
+  const link = screen.getByRole("link", { name: /weixin:\/\/wxpay/ });
+  expect(link).toHaveAttribute("href", "weixin://wxpay/bizpayurl?pr=5QQN6R31TEIEPv8M");
+  expect(link).not.toHaveAttribute("target");
+});
+
+test("自定义协议不会被当成 <img> 渲染（避免裂图）", () => {
+  render(
+    <BlockRenderer
+      block={{
+        type: "tool_result",
+        id: "c1",
+        status: "ok",
+        preview: "x",
+        images: ["weixin://wxpay/bizpayurl?pr=abc.png"],
+      }}
+    />,
+  );
+  expect(screen.queryByAltText("工具返回图片")).not.toBeInTheDocument();
 });
 
 test("渲染 tool_result 状态与耗时", () => {

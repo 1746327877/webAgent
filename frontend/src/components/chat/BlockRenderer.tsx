@@ -67,7 +67,8 @@ export default function BlockRenderer({
   }
   if (block.type === "tool_result") {
     const ok = block.status === "ok";
-    const links = asHttpUrls(block.links);
+    const links = asLinkUrls(block.links);
+    // <img src> 只认 http(s)：weixin:// 这类协议不是图片资源，放进去只会裂图
     const images = asHttpUrls(block.images);
     return (
       <details className="my-1 rounded border px-3 py-2 text-xs">
@@ -99,19 +100,33 @@ export default function BlockRenderer({
         )}
         {links.length > 0 && (
           <ul className="mt-2 space-y-0.5">
-            {links.map((url) => (
-              <li key={url} className="truncate">
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  title={`${url}（Ctrl/⌘+点击在新标签页打开）`}
-                  className="text-primary hover:underline"
-                >
-                  🔗 {url}
-                </a>
-              </li>
-            ))}
+            {links.map((url) =>
+              isHttpUrl(url) ? (
+                <li key={url} className="truncate">
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    title={`${url}（Ctrl/⌘+点击在新标签页打开）`}
+                    className="text-primary hover:underline"
+                  >
+                    🔗 {url}
+                  </a>
+                </li>
+              ) : (
+                // 自定义协议（weixin:// 等）不加 target：交给系统协议处理器唤起客户端，
+                // 加了反而可能先弹出一个空白标签页
+                <li key={url} className="truncate">
+                  <a
+                    href={url}
+                    title={`${url}（点击唤起对应客户端）`}
+                    className="text-primary hover:underline"
+                  >
+                    🔗 {url}
+                  </a>
+                </li>
+              ),
+            )}
           </ul>
         )}
       </details>
@@ -120,10 +135,23 @@ export default function BlockRenderer({
   return null; // citation 块由 MessageItem 统一渲染为 CitationList
 }
 
-/** 只接受 http(s) URL，避免把脏数据/相对路径渲染成可点击链接 */
+/** 与后端 runtime._URL_SCHEME 保持一致的白名单（单一来源在后端，前端只做渲染前的防御） */
+const LINK_SCHEME_RE = /^(?:https?:\/\/|weixin:\/\/|alipays?:\/\/|tel:|mailto:)/i;
+
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+/** 只接受 http(s) URL，避免把脏数据/相对路径渲染成可点击链接（<img src> 用） */
 function asHttpUrls(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && isHttpUrl(item));
+}
+
+/** 工具结果里的链接：http(s) + 支付类自定义协议；javascript:/data: 等一律丢弃 */
+function asLinkUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
   return value.filter(
-    (item): item is string => typeof item === "string" && /^https?:\/\//i.test(item),
+    (item): item is string => typeof item === "string" && LINK_SCHEME_RE.test(item),
   );
 }
