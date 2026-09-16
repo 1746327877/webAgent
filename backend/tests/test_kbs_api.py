@@ -38,6 +38,11 @@ async def test_upload_enqueues_and_lists(client, auth_headers, session_maker, mo
     lst = await client.get(f"/api/v1/kbs/{kid}/documents", headers=auth_headers)
     assert [d["id"] for d in lst.json()] == [doc["id"]]
 
+    # .markdown 与 .md 同属 Markdown（document_parser.MARKDOWN_TYPES），白名单必须都放行
+    md_files = {"file": ("notes.markdown", io.BytesIO("标题\n正文".encode()), "text/markdown")}
+    md_r = await client.post(f"/api/v1/kbs/{kid}/documents", files=md_files, headers=auth_headers)
+    assert md_r.status_code == 201 and md_r.json()["file_type"] == "markdown"
+
 
 async def test_upload_rejects_bad_type_and_size(client, auth_headers, monkeypatch, tmp_path):
     monkeypatch.setattr(kbs_api.settings, "upload_dir", str(tmp_path))
