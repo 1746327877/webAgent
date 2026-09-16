@@ -5,8 +5,11 @@
 `transcribe()` 供 runtime 在生成前调用。
 """
 
+import asyncio
+import base64
 import json
 import uuid
+from pathlib import Path
 
 from app.ai.mcp_slot import McpSlot
 from app.core.config import settings
@@ -91,6 +94,25 @@ def _normalize(text: str, paths: list[str]) -> list[dict]:
     raise AsrError("ASR MCP 返回为空")
 
 
+def _build_arguments(paths: list[str]) -> dict:
+    """按 ASR_INPUT_MODE 组装入参。
+
+    - base64（默认）：把音频字节读进内存随请求发出，不要求 MCP 与本平台同一文件系统
+      （宿主机跑 Whisper、后端在容器里时的默认形态）；
+    - path：只传容器内路径，要求 ASR MCP 挂同一个 uploads 卷。
+
+    读文件是阻塞 IO，调用方通过 `asyncio.to_thread` 放到线程里执行。
+    """
+    mode = (settings.asr_input_mode or "base64").strip().lower()
+    if mode == "path":
+        return {"paths": paths}
+    audios = []
+    for path in paths:
+        data = Path(path).read_bytes()
+        audios.append({"name": Path(path).name, "data_base64": base64.b64encode(data).decode()})
+    return {"audios": audios}
+
+
 async def transcribe(paths: list[str]) -> list[dict]:
     """转写一批音频路径；失败抛 `AsrError`，由调用方降级，不在库层吞掉。"""
     if not paths:
@@ -99,7 +121,10 @@ async def transcribe(paths: list[str]) -> list[dict]:
     if binding is None:
         raise AsrError("语音转写 MCP 不可用（未配置 ASR_MCP_URL 或连接失败）")
     tool_name = _pick_tool(binding)
-    text, status = await mcp_service.call_tool(binding.config, tool_name, {"paths": paths})
+    arguments = await asyncio.to_thread(_build_arguments, paths)
+    text, status = await mcp_service.call_tool(
+        binding.config, tool_name, arguments, timeout_s=settings.asr_timeout_s
+    )
     if status != "ok":
         raise AsrError(text)
     return _normalize(text, paths)

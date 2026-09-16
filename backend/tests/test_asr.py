@@ -1,5 +1,6 @@
 """语音转写 MCP 客户端、能力状态与音频附件校验（docs/设计/23）。"""
 
+import base64
 import io
 
 import pytest
@@ -45,6 +46,7 @@ async def test_transcribe_degrades_when_unconfigured(monkeypatch):
 async def test_transcribe_picks_tool_containing_transcribe(monkeypatch):
     monkeypatch.setattr(settings, "asr_mcp_url", ASR_URL)
     monkeypatch.setattr(settings, "asr_mcp_tool", "")
+    monkeypatch.setattr(settings, "asr_input_mode", "path")
     monkeypatch.setattr(
         mcp_service,
         "probe",
@@ -57,8 +59,8 @@ async def test_transcribe_picks_tool_containing_transcribe(monkeypatch):
     )
     calls: dict = {}
 
-    async def fake_call(config, name, arguments):
-        calls.update({"name": name, "args": arguments})
+    async def fake_call(config, name, arguments, **kwargs):
+        calls.update({"name": name, "args": arguments, "kwargs": kwargs})
         return ('[{"path": "/data/uploads/a.mp3", "success": true, "text": "你好"}]', "ok")
 
     monkeypatch.setattr(mcp_service, "call_tool", fake_call)
@@ -66,16 +68,41 @@ async def test_transcribe_picks_tool_containing_transcribe(monkeypatch):
     result = await asr.transcribe(["/data/uploads/a.mp3"])
     assert calls["name"] == TRANSCRIBE_TOOL["name"]
     assert calls["args"] == {"paths": ["/data/uploads/a.mp3"]}
+    # 转写耗时远超默认 15s，必须透传长超时
+    assert calls["kwargs"]["timeout_s"] == settings.asr_timeout_s
     assert result == [{"path": "/data/uploads/a.mp3", "success": True, "text": "你好", "error": None}]
+
+
+async def test_transcribe_sends_base64_when_using_host_asr(tmp_path, monkeypatch):
+    audio = tmp_path / "voice.mp3"
+    audio.write_bytes(b"ID3-fake-audio")
+    monkeypatch.setattr(settings, "asr_mcp_url", ASR_URL)
+    monkeypatch.setattr(settings, "asr_mcp_tool", "")
+    monkeypatch.setattr(settings, "asr_input_mode", "base64")
+    monkeypatch.setattr(mcp_service, "probe", _probe_ok())
+    calls: dict = {}
+
+    async def fake_call(config, name, arguments, **kwargs):
+        calls.update(arguments)
+        return ('[{"path": "voice.mp3", "success": true, "text": "转写"}]', "ok")
+
+    monkeypatch.setattr(mcp_service, "call_tool", fake_call)
+    await asr.transcribe([str(audio)])
+
+    # 宿主机跑 ASR 时传字节而不是路径：入参是 audios 且 base64 可还原
+    assert "paths" not in calls
+    assert calls["audios"][0]["name"] == "voice.mp3"
+    assert base64.b64decode(calls["audios"][0]["data_base64"]) == b"ID3-fake-audio"
 
 
 async def test_transcribe_respects_configured_tool(monkeypatch):
     monkeypatch.setattr(settings, "asr_mcp_url", ASR_URL)
     monkeypatch.setattr(settings, "asr_mcp_tool", "my_tool")
+    monkeypatch.setattr(settings, "asr_input_mode", "path")
     monkeypatch.setattr(mcp_service, "probe", _probe_ok())
     seen: list[str] = []
 
-    async def fake_call(config, name, arguments):
+    async def fake_call(config, name, arguments, **kwargs):
         seen.append(name)
         return ('[{"path": "p", "success": true, "text": "x"}]', "ok")
 
@@ -94,9 +121,10 @@ async def test_transcribe_errors_when_no_tool_matches(monkeypatch):
 
 async def test_transcribe_raises_on_call_failure(monkeypatch):
     monkeypatch.setattr(settings, "asr_mcp_url", ASR_URL)
+    monkeypatch.setattr(settings, "asr_input_mode", "path")
     monkeypatch.setattr(mcp_service, "probe", _probe_ok())
 
-    async def fake_call(config, name, arguments):
+    async def fake_call(config, name, arguments, **kwargs):
         return ("连接超时", "error")
 
     monkeypatch.setattr(mcp_service, "call_tool", fake_call)

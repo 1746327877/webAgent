@@ -250,11 +250,21 @@ async def probe(config: dict) -> ProbeResult:
     return result
 
 
-async def call_tool(config: dict, name: str, arguments: dict | None = None) -> tuple[str, str]:
-    """调用 MCP 工具，返回 (文本结果, status)。异常转错误结果，不抛。"""
+async def call_tool(
+    config: dict,
+    name: str,
+    arguments: dict | None = None,
+    *,
+    timeout_s: float | None = None,
+) -> tuple[str, str]:
+    """调用 MCP 工具，返回 (文本结果, status)。异常转错误结果，不抛。
+
+    `timeout_s` 覆盖默认连接超时——转写这类重活远超默认的 15s（见 asr 客户端）。
+    """
     server = config.get("name") or "-"
+    limit = timeout_s or CONNECT_TIMEOUT_S
     try:
-        async with asyncio.timeout(CONNECT_TIMEOUT_S):
+        async with asyncio.timeout(limit):
             async with _connect(config) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
@@ -262,7 +272,7 @@ async def call_tool(config: dict, name: str, arguments: dict | None = None) -> t
         status = "error" if getattr(result, "is_error", False) else "ok"
         text = _render_result(result)
     except TimeoutError:
-        text, status = f"MCP 工具调用超时（{int(CONNECT_TIMEOUT_S)}s）", "error"
+        text, status = f"MCP 工具调用超时（{int(limit)}s）", "error"
     except Exception as exc:  # noqa: BLE001
         text, status = f"MCP 工具调用失败：{await _describe(exc, config)}", "error"
 

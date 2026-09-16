@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     asr_mcp_url: str = ""
     # 工具名覆盖；为空时自动选探测结果里名字含 "transcribe" 的第一个工具
     asr_mcp_tool: str = ""
+    # 音频入参形态：base64（MCP 与平台不在同一文件系统，默认）| path（与平台共享 uploads 卷时）
+    asr_input_mode: str = "base64"
+    # 转写是重活（CPU 跑 large-v3 可能数十秒到数分钟），单独给长超时
+    asr_timeout_s: float = 300.0
     # 单个音频附件大小上限（默认 20MB，与文档一致）
     asr_max_bytes: int = 20 * 1024 * 1024
 
