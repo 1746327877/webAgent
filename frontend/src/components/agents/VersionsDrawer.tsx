@@ -1,6 +1,6 @@
-import { useState } from "react";
 import { useAgentVersions, useRollbackAgent } from "@/api/agents";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/stores/toast";
 
 export interface VersionsDrawerProps {
   agentId: string;
@@ -11,20 +11,16 @@ export interface VersionsDrawerProps {
 export default function VersionsDrawer({ agentId, open, onClose }: VersionsDrawerProps) {
   const { data: versions, isLoading, error } = useAgentVersions(open ? agentId : undefined);
   const rollback = useRollbackAgent();
-  const [notice, setNotice] = useState<string | null>(null);
-  const [rollbackError, setRollbackError] = useState<string | null>(null);
 
   if (!open) return null;
 
   async function onRollback(version: number) {
     if (!window.confirm(`回滚到 v${version}？当前编辑内容将被该版本覆盖。`)) return;
-    setNotice(null);
-    setRollbackError(null);
     try {
       await rollback.mutateAsync({ id: agentId, version });
-      setNotice(`已回滚到 v${version}`);
+      toast.success(`已回滚到 v${version}`);
     } catch (err) {
-      setRollbackError(err instanceof Error ? err.message : "回滚失败");
+      toast.error(err instanceof Error ? err.message : "回滚失败");
     }
   }
 
@@ -44,8 +40,6 @@ export default function VersionsDrawer({ agentId, open, onClose }: VersionsDrawe
           <Button variant="ghost" size="sm" onClick={onClose}>关闭</Button>
         </div>
 
-        {notice && <p className="mt-3 text-sm text-green-600">{notice}</p>}
-        {rollbackError && <p className="mt-3 text-sm text-red-500">{rollbackError}</p>}
         {isLoading && <p className="mt-3 text-sm text-muted-foreground">加载中…</p>}
         {error && <p className="mt-3 text-sm text-red-500">{error.message}</p>}
 

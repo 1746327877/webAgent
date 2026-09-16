@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useModels, type AgentItem } from "@/api/agents";
+import { useModels, type AgentItem, type ModelInfo } from "@/api/agents";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +41,34 @@ function splitLines(text: string): string[] {
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/** 提示所选模型是否具备工具调用能力（决定工具/MCP 绑定能否生效）。 */
+function ModelToolHint({ model, models }: { model: string; models: ModelInfo[] }) {
+  const info = models.find((m) => m.name === model);
+  const caps = info?.capabilities ?? [];
+
+  if (caps.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        未能获取模型能力（Ollama 不可用或该模型未安装，无法判断是否支持工具调用）。
+      </p>
+    );
+  }
+  if (!caps.includes("tools")) {
+    return (
+      <p className="text-xs text-red-500">
+        该模型未声明 tools 能力：绑定的工具 / MCP 不会被调用，建议改用支持工具调用的模型（如
+        qwen2.5）。
+      </p>
+    );
+  }
+  return (
+    <p className="text-xs text-muted-foreground">
+      模型声明支持 tools。注意：个别推理模型（如 deepseek-r1）声明了 tools
+      但实际不产生工具调用，若工具不生效请改用 qwen2.5。
+    </p>
+  );
 }
 
 export default function AgentForm({ initial, onSubmit, saving = false }: AgentFormProps) {
@@ -153,9 +181,15 @@ export default function AgentForm({ initial, onSubmit, saving = false }: AgentFo
             <option value={selectedModel}>{selectedModel}</option>
           )}
           {(models ?? []).map((m) => (
-            <option key={m.name} value={m.name}>{m.name}</option>
+            <option key={m.name} value={m.name}>
+              {m.name}
+              {(m.capabilities?.length ?? 0) > 0 && !m.capabilities?.includes("tools")
+                ? "（不支持工具）"
+                : ""}
+            </option>
           ))}
         </select>
+        <ModelToolHint model={selectedModel} models={models ?? []} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
@@ -28,14 +28,24 @@ const mockState = vi.hoisted(() => ({
   messages: [] as MessageItemData[],
   agents: [] as { id: string; name: string; emoji: string }[],
   models: [] as { name: string; size_mb: number | null }[],
-  session: { id: "s1", agent_id: "a1" } as { id: string; agent_id: string | null },
+  session: { id: "s1", agent_id: "a1", title: "并发问题排查" } as {
+    id: string;
+    agent_id: string | null;
+    title: string;
+  },
   lastPath: "",
   lastBody: null as unknown,
   tokens: [] as string[],
+  createCalls: 0,
 }));
 
 vi.mock("@/api/sessions", () => ({
-  useCreateSession: () => ({ mutateAsync: vi.fn(async () => ({ id: "new-1" })) }),
+  useCreateSession: () => ({
+    mutateAsync: vi.fn(async () => {
+      mockState.createCalls += 1;
+      return { id: "new-1" };
+    }),
+  }),
   useMessages: () => ({ data: mockState.messages }),
   useSession: () => ({ data: mockState.session }),
 }));
@@ -150,10 +160,11 @@ beforeEach(() => {
   mockState.messages = [];
   mockState.agents = [];
   mockState.models = [];
-  mockState.session = { id: "s1", agent_id: "a1" };
+  mockState.session = { id: "s1", agent_id: "a1", title: "并发问题排查" };
   mockState.lastPath = "";
   mockState.lastBody = null;
   mockState.tokens = [];
+  mockState.createCalls = 0;
   useComposerStore.setState({ modelOverride: null });
 });
 
@@ -197,6 +208,15 @@ test("当前会话的流式叠加层正常显示且可停止", () => {
   expect(screen.getByText("进行中内容")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "停止" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "发送" })).not.toBeInTheDocument();
+});
+
+test("顶部展示当前会话标题与调用链入口", async () => {
+  renderAt("s1");
+  expect(await screen.findByText("并发问题排查")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "查看调用链" })).toHaveAttribute(
+    "href",
+    "/admin/sessions/s1",
+  );
 });
 
 test("当前会话的错误可见", () => {
@@ -255,6 +275,49 @@ test("落地态输入发送创建新会话并走同一发送路径", async () =>
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "你好{Enter}");
   await waitFor(() => expect(mockState.lastPath).toBe("/api/v1/sessions/new-1/messages"));
   expect(mockState.lastBody).toEqual({ content: "你好", mentions: [], attachment_ids: [] });
+});
+
+test("落地态拖入多个附件只创建一个会话并逐个上传", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes("/attachments")) {
+      return new Response(
+        JSON.stringify({
+          id: `att${fetchMock.mock.calls.length}`,
+          original_name: "a.png",
+          kind: "image",
+          size_bytes: 4,
+        }),
+        { status: 201 },
+      );
+    }
+    return new Response(new Blob(["img"]), { status: 200 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  URL.createObjectURL = vi.fn(() => "blob:x");
+  URL.revokeObjectURL = vi.fn();
+
+  renderAtRoot();
+  const files = [
+    new File(["png"], "a.png", { type: "image/png" }),
+    new File(["png"], "b.png", { type: "image/png" }),
+  ];
+  fireEvent.drop(screen.getByTestId("composer-dropzone"), {
+    dataTransfer: { types: ["Files"], files },
+  });
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  // 只建一次会话：两次上传都落到同一个新会话
+  for (const call of fetchMock.mock.calls) {
+    expect(String(call[0])).toContain("/api/v1/sessions/new-1/attachments");
+  }
+  expect(mockState.createCalls).toBe(1);
+});
+
+test("发送后用户消息立即显示，不等模型返回", async () => {
+  renderAt("s1");
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "我的问题{Enter}");
+  // 本文件的流式 mock 永不结束；用户消息必须此刻就已渲染（乐观插入）
+  expect(await screen.findByText("我的问题")).toBeInTheDocument();
 });
 
 test("citation/tool 事件流式出现，点击角标打开依据抽屉", async () => {
@@ -345,7 +408,7 @@ test("图片先上传再随消息发送，用户消息附件经鉴权 blob 渲�
 
   // 选择图片：先 POST 上传，返回 id 后显示预览 chip
   await userEvent.upload(
-    screen.getByLabelText("上传附件"),
+    screen.getByTestId("attachment-input"),
     new File(["png"], "dog.png", { type: "image/png" }),
   );
   expect(await screen.findByAltText("图片预览")).toBeInTheDocument();
@@ -383,7 +446,7 @@ test("切换会话丢弃待发附件，不会把旧会话的 attachment_id 发�
 
   renderAt("s1", true);
   await userEvent.upload(
-    screen.getByLabelText("上传附件"),
+    screen.getByTestId("attachment-input"),
     new File(["png"], "a.png", { type: "image/png" }),
   );
   expect(await screen.findByAltText("图片预览")).toBeInTheDocument();

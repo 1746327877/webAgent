@@ -8,12 +8,14 @@ import AgentEditorPage from "@/pages/AgentEditorPage";
 import KbPage from "@/pages/KbPage";
 import KbDetailPage from "@/pages/KbDetailPage";
 import KeysPage from "@/pages/KeysPage";
+import CapabilitiesPage from "@/pages/CapabilitiesPage";
 import RequireAuth from "@/components/RequireAuth";
+import Toaster from "@/components/ui/toaster";
 import ChatView from "@/components/chat/ChatView";
 import AdminTracePage from "@/pages/AdminTracePage";
 
 // echarts 体积大，仪表盘按路由懒加载，避免进入首屏 entry chunk
-const AdminDashboardPage = lazy(() => import("@/pages/AdminDashboardPage"));
+const AdminPage = lazy(() => import("@/pages/AdminPage"));
 
 export default function App() {
   return (
@@ -37,13 +39,14 @@ export default function App() {
           <Route path="kb" element={<KbPage />} />
           <Route path="kb/:kbId" element={<KbDetailPage />} />
           <Route path="keys" element={<KeysPage />} />
+          <Route path="capabilities" element={<CapabilitiesPage />} />
           <Route
             path="admin"
             element={
               <Suspense
                 fallback={<div className="flex-1 p-6 text-sm text-muted-foreground">加载中…</div>}
               >
-                <AdminDashboardPage />
+                <AdminPage />
               </Suspense>
             }
           />
@@ -51,6 +54,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <Toaster />
     </BrowserRouter>
   );
 }

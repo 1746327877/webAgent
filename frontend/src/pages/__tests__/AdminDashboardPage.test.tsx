@@ -94,6 +94,7 @@ test("无数据展示空态", async () => {
 
 type CapturedOption = {
   series: Array<Record<string, unknown>>;
+  legend?: { top?: unknown };
   xAxis?: { data?: unknown[] } | Array<{ data?: unknown[] }>;
   yAxis?: { name?: string; data?: unknown[] } | Array<{ name?: string; data?: unknown[] }>;
 };
@@ -125,6 +126,8 @@ test("图表 option 按接口数据映射（趋势双轴 / 智能体柱状 / 显
     { type: "value", name: "调用" },
     { type: "value", name: "Token" },
   ]);
+  // ECharts 6 图例默认置底会压住 x 轴，回退为置顶
+  expect(trend.legend?.top).toBe(0);
 
   const bar = findOption(options, (o) => o.series[0]?.type === "bar");
   expect((bar.yAxis as { data: unknown[] }).data).toEqual(["代码专家"]);

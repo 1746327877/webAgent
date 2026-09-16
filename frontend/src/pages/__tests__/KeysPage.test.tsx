@@ -32,6 +32,17 @@ vi.mock("@/api/keys", () => ({
 }));
 
 import KeysPage from "@/pages/KeysPage";
+import Toaster from "@/components/ui/toaster";
+import { useToastStore } from "@/stores/toast";
+
+function renderKeys() {
+  return render(
+    <>
+      <KeysPage />
+      <Toaster />
+    </>,
+  );
+}
 
 beforeEach(() => {
   mocks.keys = [];
@@ -41,6 +52,7 @@ beforeEach(() => {
   mocks.createError = null;
   mocks.revokeError = null;
   mocks.revokePending = false;
+  useToastStore.getState().clear();
 });
 
 test("展示已有密钥的前缀与吊销状态", () => {
@@ -54,7 +66,7 @@ test("展示已有密钥的前缀与吊销状态", () => {
       created_at: null,
     },
   ];
-  render(<KeysPage />);
+  renderKeys();
   expect(screen.getByText("脚本")).toBeInTheDocument();
   expect(screen.getByText("sk-AbCd1234…")).toBeInTheDocument();
 });
@@ -69,7 +81,7 @@ test("创建后明文一次性展示", async () => {
     created_at: null,
     key: "sk-plaintext-secret",
   };
-  render(<KeysPage />);
+  renderKeys();
   await userEvent.type(screen.getByLabelText("密钥名称"), "新密钥");
   await userEvent.click(screen.getByRole("button", { name: "创建" }));
   expect(await screen.findByText("sk-plaintext-secret")).toBeInTheDocument();
@@ -88,14 +100,14 @@ test("吊销按钮确认后调用撤销", async () => {
     },
   ];
   vi.spyOn(window, "confirm").mockReturnValue(true);
-  render(<KeysPage />);
+  renderKeys();
   await userEvent.click(screen.getByRole("button", { name: "吊销" }));
   await waitFor(() => expect(mocks.revokeArgs).toEqual(["k1"]));
 });
 
 test("创建失败时展示错误且不展示明文", async () => {
   mocks.createError = new Error("HTTP 500");
-  render(<KeysPage />);
+  renderKeys();
   await userEvent.type(screen.getByLabelText("密钥名称"), "新密钥");
   await userEvent.click(screen.getByRole("button", { name: "创建" }));
   expect(await screen.findByText("HTTP 500")).toBeInTheDocument();
@@ -116,7 +128,7 @@ test("吊销失败时展示错误", async () => {
   ];
   mocks.revokeError = new Error("HTTP 500");
   vi.spyOn(window, "confirm").mockReturnValue(true);
-  render(<KeysPage />);
+  renderKeys();
   await userEvent.click(screen.getByRole("button", { name: "吊销" }));
   expect(await screen.findByText("HTTP 500")).toBeInTheDocument();
   await waitFor(() => expect(mocks.revokeArgs).toEqual(["k1"]));
@@ -134,6 +146,6 @@ test("吊销进行中按钮禁用，避免重复请求", () => {
     },
   ];
   mocks.revokePending = true;
-  render(<KeysPage />);
+  renderKeys();
   expect(screen.getByRole("button", { name: "吊销" })).toBeDisabled();
 });

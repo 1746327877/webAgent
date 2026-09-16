@@ -3,6 +3,7 @@ import { useApiKeys, useCreateApiKey, useRevokeApiKey } from "@/api/keys";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/stores/toast";
 
 export default function KeysPage() {
   const { data: keys = [], isLoading, error: loadError } = useApiKeys();
@@ -10,28 +11,27 @@ export default function KeysPage() {
   const revokeKey = useRevokeApiKey();
   const [name, setName] = useState("");
   const [created, setCreated] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   async function onCreate() {
     const trimmed = name.trim();
     if (!trimmed) return;
-    setError(null);
     try {
       const key = await createKey.mutateAsync(trimmed);
       setCreated(key.key);
       setName("");
+      toast.success("密钥已创建");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "创建失败");
+      toast.error(err instanceof Error ? err.message : "创建失败");
     }
   }
 
   async function onRevoke(id: string) {
     if (!window.confirm("吊销该密钥？")) return;
-    setError(null);
     try {
       await revokeKey.mutateAsync(id);
+      toast.success("密钥已吊销");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "吊销失败");
+      toast.error(err instanceof Error ? err.message : "吊销失败");
     }
   }
 
@@ -76,7 +76,6 @@ export default function KeysPage() {
         )}
         {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
         {loadError && <p className="text-sm text-red-500">{loadError.message}</p>}
-        {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="space-y-2">
           {keys.map((key) => (
             <div key={key.id} className="flex items-center gap-2 rounded border p-2 text-sm">

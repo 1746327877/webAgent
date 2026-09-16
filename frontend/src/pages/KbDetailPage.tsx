@@ -10,6 +10,7 @@ import {
 import DocumentTable from "@/components/kb/DocumentTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/stores/toast";
 
 export default function KbDetailPage() {
   const { kbId } = useParams();
@@ -20,18 +21,14 @@ export default function KbDetailPage() {
   const deleteDocument = useDeleteDocument(kbId ?? "");
   const retryDocument = useRetryDocument(kbId ?? "");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
   async function upload(file: File) {
-    setMessage(null);
-    setError(null);
     try {
       await uploadDocument.mutateAsync(file);
-      setMessage(`已上传「${file.name}」，正在处理…`);
+      toast.success(`已上传「${file.name}」，正在处理…`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "上传失败");
+      toast.error(err instanceof Error ? err.message : "上传失败");
     }
   }
 
@@ -49,24 +46,21 @@ export default function KbDetailPage() {
   }
 
   async function onRetry(docId: string) {
-    setMessage(null);
-    setError(null);
     try {
       await retryDocument.mutateAsync(docId);
-      setMessage("已重新提交解析");
+      toast.success("已重新提交解析");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "重试失败");
+      toast.error(err instanceof Error ? err.message : "重试失败");
     }
   }
 
   async function onDelete(docId: string) {
     if (!window.confirm("删除该文档？该操作不可恢复。")) return;
-    setMessage(null);
-    setError(null);
     try {
       await deleteDocument.mutateAsync(docId);
+      toast.success("文档已删除");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除失败");
+      toast.error(err instanceof Error ? err.message : "删除失败");
     }
   }
 
@@ -128,8 +122,6 @@ export default function KbDetailPage() {
           <p className="text-xs text-muted-foreground">支持 .pdf / .md / .txt / .docx，最大 20MB</p>
         </div>
 
-        {message && <p className="text-sm text-green-600">{message}</p>}
-        {error && <p className="text-sm text-red-500">{error}</p>}
         {loadError && <p className="text-sm text-red-500">{loadError.message}</p>}
 
         {isLoading ? (

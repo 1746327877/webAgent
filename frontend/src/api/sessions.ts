@@ -99,6 +99,19 @@ export function useDeleteSession() {
   });
 }
 
+/** 多选删除：一次请求删多条（后端只删当前用户拥有的会话） */
+export function useBulkDeleteSessions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      apiJson<{ deleted: number }>("/api/v1/sessions/bulk-delete", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+}
+
 export function useMessages(sessionId: string | undefined) {
   return useQuery({
     queryKey: ["messages", sessionId],

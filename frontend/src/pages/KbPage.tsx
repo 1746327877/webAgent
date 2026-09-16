@@ -4,6 +4,7 @@ import { useCreateKb, useDeleteKb, useKbs } from "@/api/kbs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/stores/toast";
 
 export default function KbPage() {
   const { data: kbs, isLoading, error: loadError } = useKbs();
@@ -30,19 +31,20 @@ export default function KbPage() {
       setName("");
       setDescription("");
       setCreating(false);
+      toast.success("知识库已创建");
       navigate(`/kb/${kb.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "创建失败");
+      toast.error(err instanceof Error ? err.message : "创建失败");
     }
   }
 
   async function onDelete(id: string, kbName: string) {
     if (!window.confirm(`删除知识库「${kbName}」？其中的文档会一并删除。`)) return;
-    setError(null);
     try {
       await deleteKb.mutateAsync(id);
+      toast.success("知识库已删除");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除失败");
+      toast.error(err instanceof Error ? err.message : "删除失败");
     }
   }
 

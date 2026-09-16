@@ -1,124 +1,80 @@
 import { useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   useAgent,
   useCreateAgent,
   useDeleteAgent,
   usePublishAgent,
-  useSetAgentTools,
   useTools,
   useUpdateAgent,
   type AgentItem,
-  type ToolInfo,
 } from "@/api/agents";
 import AgentForm from "@/components/agents/AgentForm";
+import CapabilityBindings from "@/components/agents/CapabilityBindings";
 import KbBindings from "@/components/agents/KbBindings";
-import ToolsMatrix from "@/components/agents/ToolsMatrix";
 import VersionsDrawer from "@/components/agents/VersionsDrawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsPanel } from "@/components/ui/tabs";
+import { toast } from "@/stores/toast";
 
-function ToolBindings({
-  agent,
-  tools,
-  onNotice,
-  onError,
-}: {
-  agent: AgentItem;
-  tools: ToolInfo[];
-  onNotice: (message: string) => void;
-  onError: (message: string) => void;
-}) {
-  const initial = agent.tool_slugs ?? [];
-  const setTools = useSetAgentTools();
-  const [draft, setDraft] = useState<string[]>(initial);
-  const dirty = [...draft].sort().join(",") !== [...initial].sort().join(",");
+const TABS = [
+  { key: "basic", label: "基础信息" },
+  { key: "capabilities", label: "扩展能力" },
+  { key: "knowledge", label: "知识库" },
+] as const;
 
-  async function onSave() {
-    try {
-      const res = await setTools.mutateAsync({ id: agent.id, slugs: draft });
-      setDraft(res.slugs ?? []);
-      onNotice("工具绑定已保存");
-    } catch (err) {
-      onError(err instanceof Error ? err.message : "保存工具绑定失败");
-    }
-  }
-
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium">工具绑定</h2>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={setTools.isPending || !dirty}
-          onClick={onSave}
-        >
-          {setTools.isPending ? "保存中…" : "保存工具绑定"}
-        </Button>
-      </div>
-      <ToolsMatrix tools={tools} value={draft} onChange={setDraft} disabled={setTools.isPending} />
-    </section>
-  );
-}
+type TabKey = (typeof TABS)[number]["key"];
 
 export default function AgentEditorPage() {
   const { agentId } = useParams();
   const isNew = !agentId;
   const navigate = useNavigate();
-  const location = useLocation();
   const { data: agent, isLoading, error: loadError } = useAgent(agentId);
   const { data: tools } = useTools();
   const createAgent = useCreateAgent();
   const updateAgent = useUpdateAgent();
   const deleteAgent = useDeleteAgent();
   const publishAgent = usePublishAgent();
-  const justCreated = Boolean((location.state as { created?: boolean } | null)?.created);
-  const [notice, setNotice] = useState<string | null>(justCreated ? "已创建" : null);
-  const [error, setError] = useState<string | null>(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [tab, setTab] = useState<TabKey>("basic");
 
   const saving = createAgent.isPending || updateAgent.isPending;
 
   async function onSubmit(payload: Partial<AgentItem>) {
-    setNotice(null);
-    setError(null);
     try {
       if (isNew) {
         const created = await createAgent.mutateAsync(payload);
+        toast.success("智能体已创建");
         navigate(`/agents/${created.id}`, { state: { created: true } });
       } else {
         await updateAgent.mutateAsync({ id: agentId, patch: payload });
-        setNotice("已保存");
+        toast.success("已保存");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存失败");
+      toast.error(err instanceof Error ? err.message : "保存失败");
     }
   }
 
   async function onPublish() {
     if (!agentId) return;
-    setNotice(null);
-    setError(null);
     try {
       const res = await publishAgent.mutateAsync(agentId);
-      setNotice(`已发布 v${res.version}`);
+      toast.success(`已发布 v${res.version}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "发布失败");
+      toast.error(err instanceof Error ? err.message : "发布失败");
     }
   }
 
   async function onDelete() {
     if (!agentId || !window.confirm("删除该智能体？该操作不可恢复。")) return;
-    setNotice(null);
-    setError(null);
     try {
       await deleteAgent.mutateAsync(agentId);
+      toast.success("智能体已删除");
       navigate("/agents");
     } catch (err) {
       // 409（已被会话使用）等错误由服务端 detail 展示
-      setError(err instanceof Error ? err.message : "删除失败");
+      toast.error(err instanceof Error ? err.message : "删除失败");
     }
   }
 
@@ -131,12 +87,15 @@ export default function AgentEditorPage() {
         <p className="text-sm text-red-500">
           {loadError instanceof Error ? loadError.message : "智能体不存在"}
         </p>
-        <Link to="/agents" className="text-sm underline">返回列表</Link>
+        <Link to="/agents" className="text-sm underline">
+          返回列表
+        </Link>
       </div>
     );
   }
 
   const title = isNew ? "新建智能体" : agent ? `${agent.emoji} ${agent.name}` : "编辑智能体";
+  const formKey = isNew ? "new" : `form:${agentId}:${agent?.updated_at ?? ""}`;
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -178,47 +137,48 @@ export default function AgentEditorPage() {
           )}
         </div>
 
-        {notice && <p className="text-sm text-green-600">{notice}</p>}
-        {error && <p className="text-sm text-red-500">{error}</p>}
-
-        <AgentForm
-          key={isNew ? "new" : `form:${agentId}:${agent?.updated_at ?? ""}`}
-          initial={isNew ? undefined : agent}
-          onSubmit={onSubmit}
-          saving={saving}
-        />
+        {/* 新建：还没有 agent，直接展示表单 */}
+        {isNew && <AgentForm key={formKey} onSubmit={onSubmit} saving={saving} />}
 
         {!isNew && agent && (
-          <ToolBindings
-            key={`${agent.id}:${agent.updated_at}`}
-            agent={agent}
-            tools={tools ?? []}
-            onNotice={(message) => {
-              setError(null);
-              setNotice(message);
-            }}
-            onError={(message) => {
-              setNotice(null);
-              setError(message);
-            }}
-          />
-        )}
+          <>
+            <Tabs
+              value={tab}
+              onChange={(key) => setTab(key as TabKey)}
+              items={TABS}
+              ariaLabel="智能体编辑分区"
+            />
 
-        {!isNew && agent && (
-          <KbBindings
-            key={`${agent.id}:${agent.updated_at}`}
-            agentId={agent.id}
-            bindings={agent.kb_bindings ?? []}
-            editable
-            onNotice={(message) => {
-              setError(null);
-              setNotice(message);
-            }}
-            onError={(message) => {
-              setNotice(null);
-              setError(message);
-            }}
-          />
+            {/* 基础信息保持挂载（hidden 切换），避免切标签丢失未保存的表单草稿 */}
+            <div className={tab === "basic" ? "block" : "hidden"}>
+              <AgentForm key={formKey} initial={agent} onSubmit={onSubmit} saving={saving} />
+            </div>
+
+            {tab === "capabilities" && (
+              <TabsPanel>
+                <CapabilityBindings
+                  key={`caps:${agent.id}:${agent.updated_at}`}
+                  agent={agent}
+                  tools={tools ?? []}
+                  onNotice={(message) => toast.success(message)}
+                  onError={(message) => toast.error(message)}
+                />
+              </TabsPanel>
+            )}
+
+            {tab === "knowledge" && (
+              <TabsPanel>
+                <KbBindings
+                  key={`kb:${agent.id}:${agent.updated_at}`}
+                  agentId={agent.id}
+                  bindings={agent.kb_bindings ?? []}
+                  editable
+                  onNotice={(message) => toast.success(message)}
+                  onError={(message) => toast.error(message)}
+                />
+              </TabsPanel>
+            )}
+          </>
         )}
 
         {!isNew && agentId && (

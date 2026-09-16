@@ -30,6 +30,27 @@ function toolBlock(event: ToolEvent, all: ToolEvent[]): Block {
   return { ...event };
 }
 
+/** 用户消息纯文本，用于乐观消息与回填后真实消息的等值判断。 */
+function messageText(message: MessageItemData): string {
+  return message.blocks
+    .filter((block) => block.type === "text")
+    .map((block) => block.content ?? "")
+    .join("\n");
+}
+
+/** 发送瞬间本地构造的用户消息：真实消息回填前先展示，避免"等模型答完才看到自己说的话"。 */
+function optimisticUserMessage(text: string): MessageItemData {
+  return {
+    id: `pending-${Date.now()}`,
+    role: "user",
+    blocks: [{ type: "text", content: text }],
+    status: "done",
+    rating: null,
+    error: null,
+    created_at: new Date().toISOString(),
+  };
+}
+
 export default function ChatView() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
@@ -74,6 +95,11 @@ export default function ChatView() {
   useEffect(() => () => bufferRef.current?.cancel(), []);
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  // 乐观用户消息：发送后立即显示；流结束（runStream finally）清掉，避免残留
+  const [pendingUser, setPendingUser] = useState<{
+    session: string;
+    message: MessageItemData;
+  } | null>(null);
   const attachmentsRef = useRef<PendingAttachment[]>([]);
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -162,16 +188,20 @@ export default function ChatView() {
       // 先提交最后一个不足一帧的批次，再清叠加层，避免丢尾部 token
       bufferRef.current?.flushNow();
       clearActive(streamId);
+      setPendingUser(null);
       await queryClient.invalidateQueries({ queryKey: ["messages", targetSession] });
       await queryClient.invalidateQueries({ queryKey: ["sessions"] });
     }
   }
 
-  async function attach(file: File) {
-    // 上限兜底：正常路径由 Composer 拦截并提示
-    if (attachmentsRef.current.length >= MAX_ATTACHMENTS) return;
+  async function attach(files: File[]) {
+    // 上限兜底：正常路径由 Composer 拦截并提示；这里按剩余额度截断，避免并发拖放超发
+    const room = MAX_ATTACHMENTS - attachmentsRef.current.length;
+    const accepted = files.slice(0, Math.max(0, room));
+    if (accepted.length === 0) return;
     let target = sessionId;
     if (!target) {
+      // 落地态一次可能拖入多个：只创建一次会话，再逐个上传
       try {
         const created = await createSession.mutateAsync();
         target = created.id;
@@ -180,30 +210,34 @@ export default function ChatView() {
         setError(err instanceof Error ? err.message : "附件上传失败", target ?? null);
         return;
       }
+      // 新建即当前会话：先行同步 ref，避免首个上传返回时 navigate 尚未生效而误判为已切会话
+      sessionIdRef.current = target;
     }
-    const form = new FormData();
-    form.append("file", file);
-    const res = await apiFetch(`/api/v1/sessions/${target}/attachments`, {
-      method: "POST",
-      body: form,
-    });
-    if (!res.ok) {
-      setError(`附件上传失败（HTTP ${res.status}）`, target);
-      return;
+    for (const file of accepted) {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await apiFetch(`/api/v1/sessions/${target}/attachments`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        setError(`附件上传失败（HTTP ${res.status}）`, target);
+        return;
+      }
+      const data = (await res.json()) as { id: string; kind?: string; original_name?: string };
+      // 上传期间会话已切换：丢弃结果，避免旧会话的附件进入新会话 chips
+      if (sessionIdRef.current !== target) return;
+      const isImage = data.kind === "image";
+      setAttachments((prev) => [
+        ...prev,
+        {
+          id: data.id,
+          name: data.original_name ?? file.name,
+          kind: data.kind,
+          previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+        },
+      ]);
     }
-    const data = (await res.json()) as { id: string; kind?: string; original_name?: string };
-    // 上传期间会话已切换：丢弃结果，避免旧会话的附件进入新会话 chips
-    if (sessionIdRef.current !== target) return;
-    const isImage = data.kind === "image";
-    setAttachments((prev) => [
-      ...prev,
-      {
-        id: data.id,
-        name: data.original_name ?? file.name,
-        kind: data.kind,
-        previewUrl: isImage ? URL.createObjectURL(file) : undefined,
-      },
-    ]);
   }
 
   function removeAttachment(id: string) {
@@ -229,6 +263,7 @@ export default function ChatView() {
         return;
       }
     }
+    setPendingUser({ session: target, message: optimisticUserMessage(text) });
     await runStream(
       `/api/v1/sessions/${target}/messages`,
       {
@@ -353,25 +388,48 @@ export default function ChatView() {
         }
       : null;
 
-  const items = streamingMessage ? [...visible, streamingMessage] : visible;
+  // 乐观用户消息：仅当属于当前会话、且最后一条真实消息还不是它时显示（避免与回填后的真实消息重复）
+  const pendingVisible =
+    pendingUser && pendingUser.session === sessionId ? pendingUser.message : null;
+  const lastVisibleMessage = visible[visible.length - 1];
+  const showPending =
+    pendingVisible !== null &&
+    !(
+      lastVisibleMessage?.role === "user" &&
+      messageText(lastVisibleMessage) === messageText(pendingVisible)
+    );
+
+  const items = [
+    ...visible,
+    ...(showPending && pendingVisible ? [pendingVisible] : []),
+    ...(streamingMessage ? [streamingMessage] : []),
+  ];
   // 流式叠加层属于当前回合（会话主智能体）；历史消息按 agent_id 映射归属
   const messageAgent = (m: MessageItemData) =>
     m.status === "streaming" ? agent : m.agent_id ? agentById.get(m.agent_id) : undefined;
   const messageIsRelay = (m: MessageItemData) =>
     Boolean(m.agent_id && m.agent_id !== session?.agent_id);
-  // 空会话（无消息、无流式叠加）且有智能体时展示欢迎区
-  const showWelcome = messages.length === 0 && !streamingMessage && Boolean(agent);
+  // 空会话（无消息、无流式叠加、无乐观消息）且有智能体时展示欢迎区
+  const showWelcome =
+    messages.length === 0 && !streamingMessage && !showPending && Boolean(agent);
 
   return (
     <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-        {agent && (
+        {(agent || session) && (
           <div className="flex items-center gap-2 border-b px-4 py-2 text-sm">
-            <span>{agent.emoji}</span>
-            <span className="font-medium">{agent.name}</span>
+            <span className="min-w-0 flex-1 truncate font-medium" title={session?.title}>
+              {session?.title || "新对话"}
+            </span>
+            {agent && (
+              <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                <span>{agent.emoji}</span>
+                <span>{agent.name}</span>
+              </span>
+            )}
             <Link
               to={`/admin/sessions/${sessionId}`}
-              className="ml-auto text-xs text-muted-foreground hover:underline"
+              className="shrink-0 text-xs text-muted-foreground hover:underline"
             >
               查看调用链
             </Link>

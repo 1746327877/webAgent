@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import {
+  useBulkDeleteSessions,
   useCreateSession,
   useDeleteSession,
   useSessions,
@@ -20,10 +21,14 @@ import {
 import { ChevronDownIcon } from "lucide-react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useUiStore } from "@/stores/ui";
+import { toast } from "@/stores/toast";
 
 export default function SessionSidebar() {
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  // 多选模式：进入后每行显示复选框，底部出现"删除选中"
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const theme = useUiStore((s) => s.theme);
   const toggleTheme = useUiStore((s) => s.toggleTheme);
   const thinkingDefaultOpen = useUiStore((s) => s.thinkingDefaultOpen);
@@ -34,6 +39,7 @@ export default function SessionSidebar() {
   const createSession = useCreateSession();
   const updateSession = useUpdateSession();
   const deleteSession = useDeleteSession();
+  const bulkDelete = useBulkDeleteSessions();
   const navigate = useNavigate();
   // 用 location 匹配而非 useParams：sidebar 渲染在父路由元素中（Outlet 之外），
   // 显式匹配当前 URL 才能稳定拿到正在浏览的会话 id（不依赖路由嵌套层级）
@@ -44,6 +50,39 @@ export default function SessionSidebar() {
   // 后端按 pinned desc 返回：置顶项单独成组（保持接口顺序），其余再做日期分组
   const pinnedItems = items.filter((s) => s.pinned);
   const groups = groupByDate(items.filter((s) => !s.pinned));
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelected(new Set());
+  }
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll(checked: boolean) {
+    // 全选只覆盖"当前已加载"的会话（不含未加载分页），与设计一致
+    setSelected(checked ? new Set(items.map((s) => s.id)) : new Set());
+  }
+
+  async function onBulkDelete() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!window.confirm(`删除选中的 ${ids.length} 个会话？该操作不可恢复。`)) return;
+    try {
+      const res = await bulkDelete.mutateAsync(ids);
+      toast.success(`已删除 ${res.deleted} 个会话`);
+      exitSelectMode();
+      if (activeId && ids.includes(activeId)) navigate("/");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "删除失败");
+    }
+  }
 
   async function onNew() {
     const s = await createSession.mutateAsync();
@@ -68,6 +107,27 @@ export default function SessionSidebar() {
   }
 
   function renderItem(s: SessionItem) {
+    if (selectMode) {
+      return (
+        <label
+          key={s.id}
+          className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent/50"
+        >
+          <input
+            type="checkbox"
+            aria-label={`选择 ${s.title}`}
+            className="size-4 shrink-0 accent-primary"
+            checked={selected.has(s.id)}
+            disabled={bulkDelete.isPending}
+            onChange={() => toggleSelected(s.id)}
+          />
+          <span className="min-w-0 flex-1 truncate">
+            {s.pinned ? "📌 " : ""}
+            {s.title}
+          </span>
+        </label>
+      );
+    }
     return (
       <div key={s.id} className="group flex items-center">
         <NavLink
@@ -97,6 +157,9 @@ export default function SessionSidebar() {
     );
   }
 
+  const allLoadedSelected = items.length > 0 && items.every((s) => selected.has(s.id));
+  const someLoadedSelected = items.some((s) => selected.has(s.id));
+
   return (
     <aside className="flex w-72 shrink-0 flex-col border-r">
       <div className="space-y-2 p-3">
@@ -119,6 +182,36 @@ export default function SessionSidebar() {
           </DropdownMenu>
         </div>
         <Input placeholder="搜索会话…" maxLength={64} value={query} onChange={(e) => setQuery(e.target.value)} />
+        {selectMode && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                aria-label="全选会话"
+                className="size-4 shrink-0 accent-primary"
+                checked={allLoadedSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = someLoadedSelected && !allLoadedSelected;
+                }}
+                disabled={bulkDelete.isPending || items.length === 0}
+                onChange={(e) => toggleAll(e.target.checked)}
+              />
+              全选（已加载 {items.length} 条）
+            </label>
+            <span className="text-muted-foreground">已选 {selected.size}</span>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={selected.size === 0 || bulkDelete.isPending}
+              onClick={onBulkDelete}
+            >
+              {bulkDelete.isPending ? "删除中…" : "删除选中"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={exitSelectMode}>
+              退出
+            </Button>
+          </div>
+        )}
       </div>
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {pinnedItems.length > 0 && (
@@ -165,6 +258,14 @@ export default function SessionSidebar() {
           🔑 API 密钥
         </NavLink>
         <NavLink
+          to="/capabilities"
+          className={({ isActive }) =>
+            `block rounded px-2 py-1.5 text-sm ${isActive ? "bg-accent" : "hover:bg-accent/50"}`
+          }
+        >
+          🧩 扩展能力
+        </NavLink>
+        <NavLink
           to="/admin"
           className={({ isActive }) =>
             `block rounded px-2 py-1.5 text-sm ${isActive ? "bg-accent" : "hover:bg-accent/50"}`
@@ -192,9 +293,27 @@ export default function SessionSidebar() {
             🧠 {thinkingDefaultOpen ? "思考展开" : "思考折叠"}
           </Button>
         </div>
-        <Button variant="ghost" size="sm" className="w-full" onClick={() => setShowArchived((v) => !v)}>
-          {showArchived ? "返回" : "查看归档"}
-        </Button>
+        <div className="flex gap-1">
+          <Button
+            variant={selectMode ? "secondary" : "ghost"}
+            size="sm"
+            className="flex-1"
+            onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+          >
+            {selectMode ? "取消多选" : "多选"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex-1"
+            onClick={() => {
+              exitSelectMode();
+              setShowArchived((v) => !v);
+            }}
+          >
+            {showArchived ? "返回" : "查看归档"}
+          </Button>
+        </div>
       </div>
     </aside>
   );

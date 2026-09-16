@@ -28,9 +28,16 @@ export interface AgentItem {
   current_version: number;
   variables: string[];
   tool_slugs: string[];
+  skill_slugs: string[];
+  mcp_tools: McpToolBinding[];
   kb_bindings: KbBinding[];
   created_at: string;
   updated_at: string;
+}
+
+export interface McpToolBinding {
+  mcp_server_id: string;
+  tool_name: string;
 }
 
 export interface ToolInfo {
@@ -40,6 +47,10 @@ export interface ToolInfo {
   description: string;
   category: string;
   is_system: boolean;
+  input_schema?: {
+    properties?: Record<string, { type?: string; title?: string; default?: unknown }>;
+    required?: string[];
+  };
 }
 
 export interface AgentVersion {
@@ -60,10 +71,17 @@ export function useAgent(id: string | undefined) {
   });
 }
 
+export interface ModelInfo {
+  name: string;
+  size_mb: number | null;
+  /** Ollama 能力标签，如 ["completion","tools","thinking"]；空数组表示未能探测 */
+  capabilities?: string[];
+}
+
 export function useModels() {
   return useQuery({
     queryKey: ["models"],
-    queryFn: () => apiJson<{ name: string; size_mb: number | null }[]>("/api/v1/models"),
+    queryFn: () => apiJson<ModelInfo[]>("/api/v1/models"),
   });
 }
 
@@ -113,6 +131,36 @@ export function useSetAgentTools() {
       apiJson<{ slugs: string[] }>(`/api/v1/agents/${id}/tools`, {
         method: "PUT",
         body: JSON.stringify({ slugs }),
+      }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["agents", id] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function useSetAgentSkills() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, slugs }: { id: string; slugs: string[] }) =>
+      apiJson<{ slugs: string[] }>(`/api/v1/agents/${id}/skills`, {
+        method: "PUT",
+        body: JSON.stringify({ slugs }),
+      }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["agents", id] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+export function useSetAgentMcpTools() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, tools }: { id: string; tools: McpToolBinding[] }) =>
+      apiJson<{ tools: McpToolBinding[] }>(`/api/v1/agents/${id}/mcp-tools`, {
+        method: "PUT",
+        body: JSON.stringify({ tools }),
       }),
     onSuccess: (_data, { id }) => {
       qc.invalidateQueries({ queryKey: ["agents", id] });

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import Composer from "@/components/chat/Composer";
@@ -82,8 +82,8 @@ test("选择图片上报 onAttach，chip 预览可移除，发送携带 attachme
   expect(onRemoveAttachment).toHaveBeenCalledWith("att1");
 
   const file = new File(["png"], "cat.png", { type: "image/png" });
-  await userEvent.upload(screen.getByLabelText("上传附件"), file);
-  expect(onAttach).toHaveBeenCalledWith(file);
+  await userEvent.upload(screen.getByTestId("attachment-input"), file);
+  expect(onAttach).toHaveBeenCalledWith([file]);
 
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "看图{Enter}");
   expect(onSend).toHaveBeenCalledWith("看图", [], ["att1"]);
@@ -91,12 +91,25 @@ test("选择图片上报 onAttach，chip 预览可移除，发送携带 attachme
 
 test("附件选择接受图片与常见文档类型", async () => {
   render(<Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} />);
-  const input = screen.getByLabelText("上传附件");
+  const input = screen.getByTestId("attachment-input");
   expect(input).toHaveAttribute("type", "file");
   expect(input.getAttribute("accept")).toContain(".pdf");
   expect(input.getAttribute("accept")).toContain(".docx");
   expect(input.getAttribute("accept")).toContain(".md");
   expect(screen.getByRole("button", { name: "上传附件" })).toBeInTheDocument();
+});
+
+test("上传附件与发送/停止均为图标按钮（无可见文字）", () => {
+  const { rerender } = render(<Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} />);
+  for (const name of ["上传附件", "发送"]) {
+    const btn = screen.getByRole("button", { name });
+    expect(btn.textContent).toBe("");
+    expect(btn.querySelector("svg")).toBeInTheDocument();
+  }
+  rerender(<Composer onSend={vi.fn()} onStop={vi.fn()} generating={true} />);
+  const stop = screen.getByRole("button", { name: "停止" });
+  expect(stop.textContent).toBe("");
+  expect(stop.querySelector("svg")).toBeInTheDocument();
 });
 
 test("文档 chip 显示文件名并可移除", async () => {
@@ -129,7 +142,7 @@ test("附件达到 3 个后拒绝第 4 个并提示，发送最多 3 个 id", as
     />,
   );
   await userEvent.upload(
-    screen.getByLabelText("上传附件"),
+    screen.getByTestId("attachment-input"),
     new File(["png"], "d.png", { type: "image/png" }),
   );
   expect(onAttach).not.toHaveBeenCalled();
@@ -218,4 +231,81 @@ test("模型下拉选择后回调，未选时展示智能体默认并高亮当�
     />,
   );
   expect(trigger()).toHaveTextContent("llama3:8b");
+});
+
+function dropFiles(files: File[]) {
+  const zone = screen.getByTestId("composer-dropzone");
+  const dataTransfer = { types: ["Files"], files };
+  fireEvent.dragEnter(zone, { dataTransfer });
+  return { zone, dataTransfer };
+}
+
+test("拖放文件到输入框：高亮提示并一次性上报多个文件", () => {
+  const onAttach = vi.fn();
+  render(<Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} onAttach={onAttach} />);
+  const files = [
+    new File(["png"], "a.png", { type: "image/png" }),
+    new File(["pdf"], "b.pdf", { type: "application/pdf" }),
+  ];
+  const { zone, dataTransfer } = dropFiles(files);
+  expect(screen.getByText("松开即可上传附件")).toBeInTheDocument();
+
+  fireEvent.drop(zone, { dataTransfer });
+  expect(onAttach).toHaveBeenCalledWith(files);
+  expect(screen.queryByText("松开即可上传附件")).not.toBeInTheDocument();
+});
+
+test("拖放不支持的文件类型被忽略并提示", () => {
+  const onAttach = vi.fn();
+  render(<Composer onSend={vi.fn()} onStop={vi.fn()} generating={false} onAttach={onAttach} />);
+  const { zone, dataTransfer } = dropFiles([
+    new File(["x"], "evil.exe", { type: "application/x-msdownload" }),
+  ]);
+
+  fireEvent.drop(zone, { dataTransfer });
+  expect(onAttach).not.toHaveBeenCalled();
+  expect(screen.getByText("已忽略 1 个不支持的文件")).toBeInTheDocument();
+});
+
+test("附件已满 3 个时拖放被拒绝并提示", () => {
+  const onAttach = vi.fn();
+  render(
+    <Composer
+      onSend={vi.fn()}
+      onStop={vi.fn()}
+      generating={false}
+      attachments={[1, 2, 3].map((n) => ({ id: `att${n}` }))}
+      onAttach={onAttach}
+    />,
+  );
+  const { zone, dataTransfer } = dropFiles([
+    new File(["png"], "d.png", { type: "image/png" }),
+  ]);
+
+  fireEvent.drop(zone, { dataTransfer });
+  expect(onAttach).not.toHaveBeenCalled();
+  expect(screen.getByText("最多上传 3 个附件")).toBeInTheDocument();
+});
+
+test("拖放数量超过剩余额度时按剩余额度截断并提示", () => {
+  const onAttach = vi.fn();
+  render(
+    <Composer
+      onSend={vi.fn()}
+      onStop={vi.fn()}
+      generating={false}
+      attachments={[{ id: "att1" }, { id: "att2" }]}
+      onAttach={onAttach}
+    />,
+  );
+  const files = [
+    new File(["png"], "a.png", { type: "image/png" }),
+    new File(["png"], "b.png", { type: "image/png" }),
+    new File(["png"], "c.png", { type: "image/png" }),
+  ];
+  const { zone, dataTransfer } = dropFiles(files);
+
+  fireEvent.drop(zone, { dataTransfer });
+  expect(onAttach).toHaveBeenCalledWith([files[0]]);
+  expect(screen.getByText("最多上传 3 个附件")).toBeInTheDocument();
 });

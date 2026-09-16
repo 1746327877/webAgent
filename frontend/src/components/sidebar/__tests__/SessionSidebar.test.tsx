@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { SessionItem } from "@/api/sessions";
@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   useSessions: vi.fn(),
   updateMutate: vi.fn(),
   deleteMutate: vi.fn(),
+  bulkDelete: vi.fn(),
 }));
 
 vi.mock("@/api/sessions", () => ({
@@ -14,6 +15,7 @@ vi.mock("@/api/sessions", () => ({
   useCreateSession: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
   useUpdateSession: () => ({ mutate: mocks.updateMutate }),
   useDeleteSession: () => ({ mutate: mocks.deleteMutate }),
+  useBulkDeleteSessions: () => ({ mutateAsync: mocks.bulkDelete, isPending: false }),
 }));
 
 vi.mock("@/api/agents", () => ({
@@ -149,4 +151,45 @@ test("切换主题按钮为根节点添加 dark class", () => {
   fireEvent.click(screen.getByRole("button", { name: "切换主题" }));
   expect(document.documentElement.classList.contains("dark")).toBe(true);
   document.documentElement.classList.remove("dark");
+});
+
+test("多选模式：全选已加载会话并批量删除", async () => {
+  const items = [
+    makeSession({ id: "s1", title: "会话一" }),
+    makeSession({ id: "s2", title: "会话二" }),
+  ];
+  mocks.useSessions.mockReturnValue(queryResult(items));
+  mocks.bulkDelete.mockResolvedValue({ deleted: 2 });
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(
+    <MemoryRouter>
+      <SessionSidebar />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "多选" }));
+  expect(screen.getByText("已选 0")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("checkbox", { name: "全选会话" }));
+  expect(screen.getByText("已选 2")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "删除选中" }));
+  await waitFor(() => expect(mocks.bulkDelete).toHaveBeenCalledWith(["s1", "s2"]));
+  vi.restoreAllMocks();
+});
+
+test("多选模式：取消确认则不删除", () => {
+  mocks.useSessions.mockReturnValue(queryResult([makeSession({ id: "s1", title: "会话一" })]));
+  vi.spyOn(window, "confirm").mockReturnValue(false);
+  render(
+    <MemoryRouter>
+      <SessionSidebar />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "多选" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "选择 会话一" }));
+  fireEvent.click(screen.getByRole("button", { name: "删除选中" }));
+  expect(mocks.bulkDelete).not.toHaveBeenCalled();
+  vi.restoreAllMocks();
 });

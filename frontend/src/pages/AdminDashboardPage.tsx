@@ -73,7 +73,8 @@ export default function AdminDashboardPage() {
     const series = data?.series ?? [];
     return {
       tooltip: { trigger: "axis" },
-      legend: { data: ["LLM 调用", "Prompt Token", "Completion Token"] },
+      // ECharts 6 默认把图例放到底部，会压住 x 轴与 0 基线；显式置顶，配合 grid.top 预留的空间
+      legend: { top: 0, data: ["LLM 调用", "Prompt Token", "Completion Token"] },
       grid: { left: 56, right: 64, top: 40, bottom: 28 },
       xAxis: { type: "category", boundaryGap: false, data: series.map((d) => shortTime(d.hour)) },
       yAxis: [
@@ -149,82 +150,80 @@ export default function AdminDashboardPage() {
   const cards = data?.cards;
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-6xl space-y-4 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">📊 可观测性</h1>
-          <div className="flex gap-1">
-            {RANGES.map((range) => (
-              <Button
-                key={range.hours}
-                size="sm"
-                variant={hours === range.hours ? "default" : "outline"}
-                onClick={() => setHours(range.hours)}
-              >
-                {range.label}
-              </Button>
-            ))}
-          </div>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">统计范围（默认最近 24 小时）</p>
+        <div className="flex gap-1">
+          {RANGES.map((range) => (
+            <Button
+              key={range.hours}
+              size="sm"
+              variant={hours === range.hours ? "default" : "outline"}
+              onClick={() => setHours(range.hours)}
+            >
+              {range.label}
+            </Button>
+          ))}
         </div>
+      </div>
 
-        {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
-        {error && <p className="text-sm text-red-500">{error.message}</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
+      {error && <p className="text-sm text-red-500">{error.message}</p>}
 
-        {cards && (
-          <>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-              {CARD_DEFS.map(([key, label]) => (
-                <Card key={key} size="sm">
-                  <CardContent>
-                    <p className="text-xs text-muted-foreground">{label}</p>
-                    <div
-                      data-testid={`card-${key}`}
-                      className="mt-1 text-lg font-semibold tabular-nums"
-                    >
-                      {fmt(cards[key])}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {cards.llm_calls === 0 ? (
-              <Card>
-                <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                  暂无调用数据
+      {cards && (
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {CARD_DEFS.map(([key, label]) => (
+              <Card key={key} size="sm">
+                <CardContent>
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <div
+                    data-testid={`card-${key}`}
+                    className="mt-1 text-lg font-semibold tabular-nums"
+                  >
+                    {fmt(cards[key])}
+                  </div>
                 </CardContent>
               </Card>
-            ) : (
-              <div className="grid gap-3 lg:grid-cols-2">
-                <Card>
-                  <CardContent>
-                    <p className="mb-2 text-sm font-medium">请求与 Token 趋势</p>
-                    <Chart label="请求与 Token 趋势" option={trendOption} />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent>
-                    <p className="mb-2 text-sm font-medium">智能体活跃排行</p>
-                    <Chart label="智能体活跃排行" option={agentsOption} />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent>
-                    <p className="mb-2 text-sm font-medium">Token 分布</p>
-                    <Chart label="Token 分布" option={modelsOption} />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent>
-                    <p className="mb-2 text-sm font-medium">显存曲线</p>
-                    <Chart label="显存曲线" option={vramOption} />
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+            ))}
+          </div>
+
+          {cards.llm_calls === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                暂无调用数据
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2">
+              <Card>
+                <CardContent>
+                  <p className="mb-2 text-sm font-medium">请求与 Token 趋势</p>
+                  <Chart label="请求与 Token 趋势" option={trendOption} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent>
+                  <p className="mb-2 text-sm font-medium">智能体活跃排行</p>
+                  <Chart label="智能体活跃排行" option={agentsOption} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent>
+                  <p className="mb-2 text-sm font-medium">Token 分布</p>
+                  <Chart label="Token 分布" option={modelsOption} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent>
+                  <p className="mb-2 text-sm font-medium">显存曲线</p>
+                  <Chart label="显存曲线" option={vramOption} />
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

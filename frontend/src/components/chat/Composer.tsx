@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ArrowUp, Paperclip, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,7 +28,8 @@ interface Props {
   generating: boolean;
   agents?: MentionAgent[];
   attachments?: PendingAttachment[];
-  onAttach?: (file: File) => void;
+  /** 一次可传多个：文件选择器传 1 个，拖放可能一次多个；调用方负责逐个上传与上限兜底 */
+  onAttach?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
   sessionKey?: string;
   /** landing：首页居中大输入框；default：会话内输入框 */
@@ -48,6 +50,17 @@ const MAX_MENTIONS = 2;
 export const MAX_ATTACHMENTS = 3;
 /** 与后端 ALLOWED_EXTS 对齐：图片 + 常见文档 */
 export const ATTACH_ACCEPT = ".png,.jpg,.jpeg,.webp,.pdf,.md,.markdown,.txt,.docx";
+/** 拖放不受 file input 的 accept 约束，这里按扩展名做一次前端过滤 */
+const ACCEPT_EXTS = ATTACH_ACCEPT.split(",").map((s) => s.trim().replace(/^\./, "").toLowerCase());
+
+function isAcceptedFile(file: File): boolean {
+  const ext = file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase();
+  return ACCEPT_EXTS.includes(ext);
+}
+
+function hasFileDrag(e: React.DragEvent): boolean {
+  return Array.from(e.dataTransfer?.types ?? []).includes("Files");
+}
 
 export default function Composer({
   onSend,
@@ -69,6 +82,9 @@ export default function Composer({
   const [mentionIds, setMentionIds] = useState<string[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [attachHint, setAttachHint] = useState(false);
+  const [dropHint, setDropHint] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // 会话切换：ChatView 在会话间复用，必须丢弃上一个会话的草稿与提及（附件由 ChatView 负责）
@@ -80,6 +96,9 @@ export default function Composer({
     setMentionIds([]);
     setMentionQuery(null);
     setAttachHint(false);
+    setDropHint(null);
+    setDragging(false);
+    dragDepth.current = 0;
   }, [sessionKey]);
 
   const options =
@@ -103,6 +122,50 @@ export default function Composer({
     setMentionIds((prev) => (prev.includes(agent.id) ? prev : [...prev, agent.id]));
     setMentionQuery(null);
     setActiveIndex(0);
+  }
+
+  // 用深度计数抵消子元素间移动产生的 dragleave，避免高亮闪烁
+  function onDragEnter(e: React.DragEvent) {
+    if (!hasFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragging(true);
+  }
+
+  function onDragOver(e: React.DragEvent) {
+    if (!hasFileDrag(e)) return;
+    e.preventDefault(); // 阻止浏览器直接打开文件
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  }
+
+  function onDragLeave(e: React.DragEvent) {
+    if (!hasFileDrag(e)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  }
+
+  function onDrop(e: React.DragEvent) {
+    if (!hasFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    if (attachCap) {
+      setAttachHint(true);
+      return;
+    }
+    setAttachHint(false);
+    const accepted: File[] = [];
+    let rejected = 0;
+    for (const file of Array.from(e.dataTransfer?.files ?? [])) {
+      if (isAcceptedFile(file)) accepted.push(file);
+      else rejected += 1;
+    }
+    setDropHint(rejected > 0 ? `已忽略 ${rejected} 个不支持的文件` : null);
+    // 多余的文件直接丢弃并复用「最多 3 个」提示（与点击上传的上限交互一致）
+    const room = MAX_ATTACHMENTS - attachments.length;
+    const toUpload = accepted.slice(0, Math.max(0, room));
+    if (accepted.length > toUpload.length) setAttachHint(true);
+    if (toUpload.length > 0) onAttach?.(toUpload);
   }
 
   function submit() {
@@ -164,15 +227,26 @@ export default function Composer({
           })}
         </div>
       )}
-      {attachCap && attachHint && (
+      {attachHint && (
         <p className="text-xs text-muted-foreground">最多上传 {MAX_ATTACHMENTS} 个附件</p>
       )}
-      <div className="relative flex flex-col gap-2 rounded-xl border bg-background p-2 shadow-sm focus-within:border-ring">
+      {dropHint && <p className="text-xs text-muted-foreground">{dropHint}</p>}
+      <div
+        data-testid="composer-dropzone"
+        className={cn(
+          "relative flex flex-col gap-2 rounded-xl border bg-background p-2 shadow-sm focus-within:border-ring",
+          dragging && "border-ring ring-2 ring-ring/40",
+        )}
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
         <input
           ref={fileRef}
           type="file"
           accept={ATTACH_ACCEPT}
-          aria-label="上传附件"
+          data-testid="attachment-input"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -184,7 +258,7 @@ export default function Composer({
               return;
             }
             setAttachHint(false);
-            onAttach?.(file);
+            onAttach?.([file]);
           }}
         />
         {mentionQuery !== null && options.length > 0 && (
@@ -263,7 +337,9 @@ export default function Composer({
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            size="icon"
+            aria-label="上传附件"
+            title="上传附件"
             onClick={() => {
               if (attachCap) {
                 setAttachHint(true);
@@ -272,21 +348,28 @@ export default function Composer({
               fileRef.current?.click();
             }}
           >
-            上传附件
+            <Paperclip />
           </Button>
           <span className="hidden text-xs text-muted-foreground sm:inline">
             @ 提及智能体 · Shift+Enter 换行
           </span>
           <div className="ml-auto flex gap-2">
             {generating ? (
-              <Button variant="secondary" onClick={onStop}>
-                停止
+              <Button variant="secondary" size="icon" aria-label="停止" title="停止" onClick={onStop}>
+                <Square />
               </Button>
             ) : (
-              <Button onClick={submit}>发送</Button>
+              <Button size="icon" aria-label="发送" title="发送" onClick={submit}>
+                <ArrowUp />
+              </Button>
             )}
           </div>
         </div>
+        {dragging && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-ring bg-background/80 text-sm font-medium text-muted-foreground">
+            松开即可上传附件
+          </div>
+        )}
       </div>
     </div>
   );
