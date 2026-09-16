@@ -13,6 +13,14 @@ def test_splits_at_sentence_boundary():
     assert all(c.endswith("。") for c in chunks)
 
 
+def test_delimiter_path_preserves_all_content():
+    # 数据丢失是最高危失败模式：走分隔符（非硬切兜底）路径时，递归必须原样保留分隔符与正文
+    text = "第一句。" * 40
+    chunks = split_text(text, size=50, overlap=0)
+    assert len(chunks) >= 3
+    assert "".join(chunks) == text
+
+
 def test_falls_back_to_hard_split():
     chunks = split_text("字" * 250, size=100, overlap=20)
     assert len(chunks) >= 3
