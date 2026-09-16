@@ -4,6 +4,10 @@ x-backend-env: &backend-env
   OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
   JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-0123456789abcdef}
   UPLOAD_DIR: /data/uploads
+  # 宿主机 MinerU 服务；留空则用内置解析（pymupdf/docx），不启用 OCR
+  MINERU_API_URL: ${MINERU_API_URL:-}
+  # pipeline 支持纯 CPU；hybrid/vlm 需要 CUDA
+  MINERU_BACKEND: ${MINERU_BACKEND:-pipeline}
 
 services:
   postgres:
@@ -75,6 +79,19 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+
+  # 联网搜索 MCP（open-websearch，Node/TypeScript 实现）。
+  # 后端在容器内用 http://web-search:3000/mcp 访问（容器网络内部端口固定 3000）；
+  # 宿主机测试 / 本地开发模式用 http://localhost:${WEB_SEARCH_PORT:-3300}/mcp
+  # （默认宿主端口避开 Windows 保留段 2929-3028）
+  web-search:
+    image: ghcr.io/aas-ee/open-web-search:latest
+    environment:
+      MODE: http
+      PORT: "3000"
+      DEFAULT_SEARCH_ENGINE: ${WEB_SEARCH_ENGINE:-bing}
+    ports:
+      - "${WEB_SEARCH_PORT:-3300}:3000"
 
 volumes:
   pgdata:

@@ -48,12 +48,16 @@
 
 ## 一键启动（Docker，推荐）
 
+> 更省事：仓库根目录的 `start.ps1` 已封装完整流程（建 `.env`、前置检查、build/up、等待健康检查、打开浏览器）。
+> `.\start.ps1` 走 Docker 全量；`.\start.ps1 -Local` 走本地开发（compose 只起 postgres/redis，前后端跑本机）；`.\start.ps1 -Down` 停止。Windows 也可直接双击 `start.cmd`。
+
 前置：Docker Desktop + 宿主机 Ollama（至少 `ollama pull qwen2.5:7b-instruct-q4_K_M`；接力争演示再拉 `deepseek-r1:latest`，图片演示拉 `qwen2.5vl:7b`，知识库演示拉 `bge-m3`）。
 
 1. 可选：`Copy-Item .env.example .env` 并修改 `PG_PWD` / `JWT_SECRET`（不创建也能跑，默认值仅供本机演示）
 2. `docker compose up -d --build`
 3. 打开 http://localhost:8080 ，用 `demo / Demo123456` 登录（后端容器启动时自动执行迁移 + `scripts.seed_all`）
 4. 排障：`docker compose ps` 看健康状态；`docker compose logs -f backend` 看启动日志；`http://localhost:8000/docs` 看 Swagger
+   - 后端日志统一格式（`时间 级别 logger: 消息`）输出到 stdout：MCP 测试连接/调用、工具执行失败、对话生成异常、未处理异常堆栈都会落在这里；级别用 `LOG_LEVEL` 环境变量调整（默认 INFO）
 5. 停止：`docker compose down`（保留数据卷）；`docker compose down -v` 清空数据库与上传文件
 
 架构总览：
@@ -95,6 +99,45 @@ flowchart LR
 4. 起后端：`cd backend && uv sync && uv run alembic upgrade head && uv run python -m scripts.seed && uv run uvicorn app.main:app --reload --port 8000`
 5. 起解析 worker（新终端）：`cd backend && uv run arq app.workers.settings.WorkerSettings`（上传文档需要 worker 运行）
 6. 起前端：`cd frontend && pnpm i && pnpm dev` → http://localhost:5173（演示账号 demo / Demo123456；登录后左下角「📊 可观测性」进入 `/admin`）
+
+## 外部能力接入
+
+### 联网搜索 MCP（open-websearch）
+
+compose 已内置 `web-search` 服务（open-websearch，端口 3000）：
+
+```powershell
+docker compose up -d web-search
+```
+
+然后在「🧩 扩展能力 → MCP → 新建 MCP」填：
+
+- 名称：`web-search`
+- 连接方式：`http`
+- URL：Docker 后端用 `http://web-search:3000/mcp`（容器网络内部端口固定 3000）；本地开发 / 宿主机测试用 `http://localhost:3300/mcp`（宿主端口默认 3300，避开 Windows 保留段）
+- 请求头：留空（该服务无需鉴权）
+
+点「测试连接」应列出 `search`、`fetchGithubReadme` 等工具；再到智能体编辑器「扩展能力」里勾选要暴露给模型的 tool（一般只勾 `search`）。
+
+### MinerU 文档解析（替代内置解析，含 OCR）
+
+宿主机独立服务，不装进后端镜像（首次会下载依赖与模型，GB 级）：
+
+```powershell
+uv venv D:\mineru\.venv --python 3.12
+uv pip install --python D:\mineru\.venv\Scripts\python.exe -U "mineru[all]"
+.\scripts\start-mineru.ps1            # 默认 8001 端口
+```
+
+在 `.env` 启用（不设则回退内置 pymupdf/docx 解析，无 OCR）：
+
+```
+MINERU_API_URL=http://host.docker.internal:8001   # Docker 模式
+MINERU_BACKEND=pipeline                           # 纯 CPU；hybrid/vlm 需要 CUDA
+# MINERU_API_URL=http://localhost:8001            # 本地开发
+```
+
+之后知识库上传 PDF/DOCX（含扫描件）走 MinerU；MinerU 不可用时自动回退内置解析并记 warning 日志。详见 `docs/设计/13-MinerU与联网搜索MCP.md`。
 
 ## 演示数据
 
@@ -147,6 +190,7 @@ uv run python -m scripts.seed_kb              # 创建演示知识库「Java 并
 
 ## 文档
 
-- 设计文档：`docs/设计/`
+- 协作约定（含 Obsidian 同步规则）：`AGENTS.md`
+- 设计文档：`docs/设计/`（改动后用 `.\scripts\sync-docs.ps1` 同步到 Obsidian）
 - 实施计划：`docs/superpowers/plans/`
 - 演示素材（GIF 占位与录制说明）：`docs/assets/README.md`
