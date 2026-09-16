@@ -61,6 +61,8 @@ async def test_runtime_injects_context_and_citations(client, auth_headers, sessi
     body = r.text
     assert "event: citation" in body
     assert '"source": "java.md"' in body and '"ref": 1' in body
+    # citation 块携带章节路径；该 chunk 无 headings 键时回落空列表
+    assert '"headings": []' in body
     req = provider.requests[0]
     sys_msg = req.messages[0]
     assert sys_msg["role"] == "system" and "[知识库检索结果]" in sys_msg["content"]

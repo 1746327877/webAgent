@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
@@ -96,6 +96,7 @@ vi.mock("@/lib/stream", () => ({
         page: 3,
         score: 0.9,
         snippet: "混合检索片段",
+        headings: ["第3章", "3.1 核心参数"],
       },
     });
     onEvent({
@@ -346,9 +347,15 @@ test("citation/tool 事件流式出现，点击角标打开依据抽屉", async 
   const link = screen.getByRole("link", { name: "1" });
   expect(link).toHaveAttribute("href", "#cite-1");
   expect(screen.queryByText("混合检索片段")).not.toBeInTheDocument();
+  // [n] 列表项展示章节路径
+  expect(screen.getByText(/· 第3章 › 3\.1 核心参数/)).toBeInTheDocument();
   await userEvent.click(link);
   expect(await screen.findByText("混合检索片段")).toBeInTheDocument();
   expect(screen.getByText(/第 3 页/)).toBeInTheDocument();
+  // 抽屉里展示同一份章节路径
+  expect(
+    within(screen.getByLabelText("引用依据")).getByText("第3章 › 3.1 核心参数"),
+  ).toBeInTheDocument();
 });
 
 test("助手消息显示智能体徽标与接力标签", async () => {

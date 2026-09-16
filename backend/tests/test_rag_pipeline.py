@@ -9,12 +9,13 @@ from app.ai.rag.splitter import split_text
 from app.models import Chunk, Document, KnowledgeBase, User
 
 
-def test_splitter_prefers_headings_and_overlaps():
+def test_splitter_leading_heading_block_stays_first_within_size_limit():
+    # 首节（含标题行）原样作为第一块，后续内容在 size 硬上限内切分
     text = "# 标题一\n第一段内容。" * 1 + "\n\n" + "第二段。" * 200
     chunks = split_text(text, size=100, overlap=10)
     assert len(chunks) >= 2
     assert chunks[0].startswith("# 标题一")
-    assert all(len(c) <= 130 for c in chunks)  # 允许切分余量
+    assert all(len(c) <= 100 for c in chunks)
 
 
 def test_splitter_hard_split():
@@ -28,7 +29,10 @@ def test_splitter_normalizes_crlf():
 
 
 async def _seed_doc(
-    session_maker, upload_dir: Path, content: str = "# 标题\n内容。\n\n第二段。"
+    session_maker,
+    upload_dir: Path,
+    content: str = "# 标题\n内容。\n\n第二段。",
+    file_type: str = "md",
 ) -> tuple:
     async with session_maker() as db:
         u = User(
@@ -42,12 +46,12 @@ async def _seed_doc(
         kb = KnowledgeBase(owner_id=u.id, name="K")
         db.add(kb)
         await db.flush()
-        path = upload_dir / f"{uuid.uuid4()}.md"
+        path = upload_dir / f"{uuid.uuid4()}.{file_type}"
         path.write_text(content, encoding="utf-8")
         doc = Document(
             kb_id=kb.id,
-            filename="a.md",
-            file_type="md",
+            filename=f"a.{file_type}",
+            file_type=file_type,
             size_bytes=len(content),
             meta={"stored_name": path.name},
         )
@@ -180,3 +184,78 @@ async def test_run_ingest_reuses_single_provider(session_maker, tmp_path):
     assert len(created) == 1 and closed == [1]
     assert created[0].embed_calls
     assert created[0].embed_calls[0][1] == settings.embedding_model
+
+
+async def test_run_ingest_uses_kb_chunk_size(session_maker, tmp_path):
+    from app.ai.rag.pipeline import run_ingest
+    from app.models import Chunk, KnowledgeBase
+
+    doc_id, kb_id = await _seed_doc(session_maker, tmp_path, content="段落内容。" * 200)
+    async with session_maker() as db:
+        kb = await db.get(KnowledgeBase, uuid.UUID(kb_id))
+        kb.chunk_size = 100
+        kb.chunk_overlap = 0
+        await db.commit()
+
+    async def fake_embedder(texts: list[str]) -> list[list[float]]:
+        return [[0.0] * 1024 for _ in texts]
+
+    await run_ingest(
+        doc_id, embedder=fake_embedder, upload_dir=str(tmp_path), session_factory=session_maker
+    )
+    async with session_maker() as db:
+        chunks = (
+            await db.scalars(select(Chunk).where(Chunk.kb_id == uuid.UUID(kb_id)))
+        ).all()
+        # 1000 字 / 100 字一块 → 远多于默认 512 时的块数
+        assert len(chunks) >= 8
+
+
+async def test_run_ingest_markdown_chunks_carry_headings(session_maker, tmp_path):
+    from app.ai.rag.pipeline import run_ingest
+    from app.models import Chunk
+
+    content = "# 第一章\n内容甲。\n\n## 1.1 小节\n内容乙。"
+    doc_id, kb_id = await _seed_doc(session_maker, tmp_path, content=content)
+
+    async def fake_embedder(texts: list[str]) -> list[list[float]]:
+        return [[0.0] * 1024 for _ in texts]
+
+    await run_ingest(
+        doc_id, embedder=fake_embedder, upload_dir=str(tmp_path), session_factory=session_maker
+    )
+    async with session_maker() as db:
+        chunks = (
+            await db.scalars(select(Chunk).where(Chunk.kb_id == uuid.UUID(kb_id)))
+        ).all()
+        heading_paths = [c.meta.get("headings") for c in chunks]
+        assert ["第一章"] in heading_paths
+        assert ["第一章", "1.1 小节"] in heading_paths
+
+
+async def test_run_ingest_text_branch_keeps_page_without_headings(
+    session_maker, tmp_path, monkeypatch
+):
+    """text 分支（.txt）保留页码、不写 headings——Markdown 之外唯一的分支，别让 e2e 只覆盖 md。"""
+    from app.ai.rag.pipeline import run_ingest
+
+    # 固定两页文本，绕过真实解析；extract_document 内部按需 import，因此 patch 模块属性即可生效
+    monkeypatch.setattr(
+        "app.ai.rag.parsers.extract_text",
+        lambda path, file_type: [(1, "第一页内容。"), (2, "第二页内容。")],
+    )
+    doc_id, kb_id = await _seed_doc(session_maker, tmp_path, file_type="txt")
+
+    async def fake_embedder(texts: list[str]) -> list[list[float]]:
+        return [[0.0] * 1024 for _ in texts]
+
+    await run_ingest(
+        doc_id, embedder=fake_embedder, upload_dir=str(tmp_path), session_factory=session_maker
+    )
+    async with session_maker() as db:
+        chunks = (
+            await db.scalars(select(Chunk).where(Chunk.kb_id == uuid.UUID(kb_id)))
+        ).all()
+        assert chunks
+        assert all(c.meta["page"] in {1, 2} for c in chunks)
+        assert all("headings" not in c.meta for c in chunks)

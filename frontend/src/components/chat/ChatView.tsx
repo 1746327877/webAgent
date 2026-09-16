@@ -535,6 +535,11 @@ export default function ChatView() {
                 {openCitation.page != null ? `第 ${openCitation.page} 页 · ` : ""}
                 相关度 {openCitation.score.toFixed(2)}
               </p>
+              {openCitation.headings?.length ? (
+                <p className="truncate text-xs text-muted-foreground">
+                  {openCitation.headings.join(" › ")}
+                </p>
+              ) : null}
             </div>
             <Button variant="ghost" size="sm" onClick={() => setOpenCitation(null)}>
               关闭

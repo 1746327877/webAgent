@@ -19,7 +19,7 @@ from app.services import kb_service
 router = APIRouter(prefix="/kbs", tags=["kbs"])
 logger = logging.getLogger(__name__)
 
-ALLOWED = {"pdf", "md", "txt", "docx"}
+ALLOWED = {"pdf", "md", "markdown", "txt", "docx"}
 MAX_BYTES = 20 * 1024 * 1024
 
 
@@ -138,7 +138,7 @@ async def upload_document(
     kb = await kb_service.get_owned_kb(db, user, kid)
     ext = (file.filename or "").rsplit(".", 1)[-1].lower()
     if ext not in ALLOWED:
-        raise HTTPException(status_code=415, detail="不支持的文件类型")
+        raise HTTPException(status_code=415, detail="仅支持 pdf/md/markdown/txt/docx 文件")
     # multipart 解析已完成，先用 size 预检，避免把超大文件整读进内存
     if file.size is not None and file.size > MAX_BYTES:
         raise HTTPException(status_code=413, detail="文件超过 20MB")

@@ -1,5 +1,5 @@
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import jieba
 from sqlalchemy import text
@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 TOP_CHANNEL = 40
 RRF_K = 60
+# 引用来源标签的层级分隔符，format_context 与前端展示保持一致
+HEADING_SEPARATOR = " › "
 
 
 @dataclass
@@ -18,6 +20,9 @@ class RetrievedChunk:
     rrf_score: float
     channel_hits: int
     similarity: float = 0.0
+    # 章节路径（如 ["第3章", "3.1 核心参数"]）；历史数据无 meta.headings，
+    # 用 default_factory 避免共享可变默认值并回落为空列表
+    headings: list[str] = field(default_factory=list)
 
 
 def jieba_tokens(query: str) -> str:
@@ -96,16 +101,26 @@ async def hybrid_search(
                 rrf_score=float(row.rrf_score),
                 channel_hits=int(row.channel_hits),
                 similarity=float(row.similarity or 0.0),
+                headings=list(meta.get("headings") or []),
             )
         )
     return out
 
 
+def _source_label(chunk: RetrievedChunk) -> str:
+    """来源标签：文件名 [p页码] [› 章节 › 子节]，缺失项自动省略。"""
+    label = chunk.source
+    if chunk.page:
+        label += f" p{chunk.page}"
+    if chunk.headings:
+        label += HEADING_SEPARATOR + HEADING_SEPARATOR.join(chunk.headings)
+    return label
+
+
 def format_context(chunks: list[RetrievedChunk]) -> str:
     lines = ["[知识库检索结果]"]
     for i, c in enumerate(chunks, 1):
-        loc = f" p{c.page}" if c.page else ""
         snippet = c.content[:300].replace("\n", " ")
-        lines.append(f"[{i}] (来源: {c.source}{loc}) {snippet}")
+        lines.append(f"[{i}] (来源: {_source_label(c)}) {snippet}")
     lines.append("回答时请用 [1][2] 形式标注引用；检索结果未覆盖时明确说明。")
     return "\n".join(lines)

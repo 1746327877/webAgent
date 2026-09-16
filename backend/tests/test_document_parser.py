@@ -1,4 +1,5 @@
 from app.ai.rag import document_parser
+from app.ai.rag.document_parser import ParsedDoc
 from app.ai.rag.mineru_client import MinerUError
 from app.core.config import settings
 
@@ -8,7 +9,8 @@ def test_pdf_uses_mineru_when_enabled(tmp_path, monkeypatch):
     monkeypatch.setattr(
         document_parser.mineru_client, "parse_markdown", lambda path, file_type: "# MD"
     )
-    assert document_parser.extract_pages(tmp_path / "a.pdf", "pdf") == [(None, "# MD")]
+    result = document_parser.extract_document(tmp_path / "a.pdf", "pdf")
+    assert result == ParsedDoc(kind="markdown", pages=[(None, "# MD")])
 
 
 def test_falls_back_when_mineru_fails(tmp_path, monkeypatch):
@@ -21,7 +23,8 @@ def test_falls_back_when_mineru_fails(tmp_path, monkeypatch):
     from app.ai.rag import parsers
 
     monkeypatch.setattr(parsers, "extract_text", lambda path, file_type: [(1, "fallback")])
-    assert document_parser.extract_pages(tmp_path / "a.pdf", "pdf") == [(1, "fallback")]
+    result = document_parser.extract_document(tmp_path / "a.pdf", "pdf")
+    assert result == ParsedDoc(kind="text", pages=[(1, "fallback")])
 
 
 def test_falls_back_when_mineru_returns_empty(tmp_path, monkeypatch):
@@ -32,7 +35,8 @@ def test_falls_back_when_mineru_returns_empty(tmp_path, monkeypatch):
     from app.ai.rag import parsers
 
     monkeypatch.setattr(parsers, "extract_text", lambda path, file_type: [(None, "builtin")])
-    assert document_parser.extract_pages(tmp_path / "a.pdf", "pdf") == [(None, "builtin")]
+    result = document_parser.extract_document(tmp_path / "a.pdf", "pdf")
+    assert result == ParsedDoc(kind="text", pages=[(None, "builtin")])
 
 
 def test_disabled_skips_mineru(tmp_path, monkeypatch):
@@ -45,10 +49,11 @@ def test_disabled_skips_mineru(tmp_path, monkeypatch):
     from app.ai.rag import parsers
 
     monkeypatch.setattr(parsers, "extract_text", lambda path, file_type: [(None, "builtin")])
-    assert document_parser.extract_pages(tmp_path / "a.docx", "docx") == [(None, "builtin")]
+    result = document_parser.extract_document(tmp_path / "a.docx", "docx")
+    assert result == ParsedDoc(kind="text", pages=[(None, "builtin")])
 
 
-def test_markdown_type_never_uses_mineru(tmp_path, monkeypatch):
+def test_markdown_type_skips_mineru_and_is_classified_markdown(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "mineru_api_url", "http://mineru.test:8001")
 
     def should_not_call(path, file_type):
@@ -57,4 +62,5 @@ def test_markdown_type_never_uses_mineru(tmp_path, monkeypatch):
     monkeypatch.setattr(document_parser.mineru_client, "parse_markdown", should_not_call)
     path = tmp_path / "note.md"
     path.write_text("# note", encoding="utf-8")
-    assert document_parser.extract_pages(path, "md") == [(None, "# note")]
+    result = document_parser.extract_document(path, "md")
+    assert result == ParsedDoc(kind="markdown", pages=[(None, "# note")])

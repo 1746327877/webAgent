@@ -24,8 +24,10 @@ async def _seed(session_maker):
         v_other[2] = 1.0
         db.add_all(
             [
+                # 首个 chunk 带章节元数据，验证检索结果能读回 meta.headings
                 Chunk(document_id=doc.id, kb_id=kb.id, content="完全语义相关", content_tokens="完全 语义 相关",
-                      chunk_index=0, embedding=v_semantic),
+                      chunk_index=0, embedding=v_semantic,
+                      meta={"page": 1, "headings": ["第3章"]}),
                 Chunk(document_id=doc.id, kb_id=kb.id, content="并发编程关键词命中", content_tokens="并发 编程 关键词 命中",
                       chunk_index=1, embedding=v_keyword),
                 Chunk(document_id=doc.id, kb_id=kb.id, content="无关内容", content_tokens="无关 内容",
@@ -62,6 +64,9 @@ async def test_hybrid_search_rrf_and_channel_hits(session_maker):
     assert chunks[0].content == "并发编程关键词命中"
     assert chunks[0].rrf_score > chunks[1].rrf_score
     assert chunks[0].source == "java.md"
+    # 检索结果带回 meta.headings；历史数据无该键时回落为 []
+    assert by_content["完全语义相关"].headings == ["第3章"]
+    assert by_content["无关内容"].headings == []
 
 
 async def test_hybrid_search_empty_kbs(session_maker):
@@ -80,3 +85,27 @@ async def test_format_context_numbers_sources(session_maker):
         [RetrievedChunk(id="c1", content="片段", source="a.md", page=2, rrf_score=0.5, channel_hits=2)]
     )
     assert "[1]" in ctx and "a.md" in ctx and "p2" in ctx
+
+
+def test_format_context_includes_heading_path():
+    from app.ai.rag.retrieval import RetrievedChunk, format_context
+
+    ctx = format_context(
+        [
+            RetrievedChunk(
+                id="c1",
+                content="片段",
+                source="a.md",
+                page=2,
+                rrf_score=0.5,
+                channel_hits=2,
+                headings=["第3章", "3.1 核心参数"],
+            )
+        ]
+    )
+    assert "第3章 › 3.1 核心参数" in ctx
+    # 无页码/无章节时来源标签只保留文件名，不留多余分隔符
+    plain = format_context(
+        [RetrievedChunk(id="c2", content="片段", source="b.txt", page=None, rrf_score=0.1, channel_hits=1)]
+    )
+    assert "(来源: b.txt)" in plain
