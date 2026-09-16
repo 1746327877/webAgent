@@ -9,7 +9,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
-from app.models import Chunk, Document
+from app.models import Chunk, Document, KnowledgeBase
 
 BATCH = 64
 
@@ -78,20 +78,32 @@ async def run_ingest(
                 path = base / stored
                 if not path.exists():
                     raise FileNotFoundError("上传文件丢失")
-                from app.ai.rag.document_parser import extract_pages
-                from app.ai.rag.splitter import split_text
+                from app.ai.rag.document_parser import KIND_MARKDOWN, extract_document
+                from app.ai.rag.splitter import split_markdown, split_text
 
                 # 解析/切片/jieba 都是同步重活，挪到线程池避免阻塞事件循环
-                # PDF/DOCX 优先走 MinerU（含 OCR），失败自动回退内置解析
-                pages = await asyncio.to_thread(extract_pages, path, doc.file_type)
+                # PDF/DOCX 优先走 MinerU（含 OCR），失败自动回退内置解析；
+                # parsed.kind 决定下游按 Markdown 还是纯文本切分
+                parsed = await asyncio.to_thread(extract_document, path, doc.file_type)
                 meta_pages = doc.meta or {}
                 await _set_status(db, doc, "chunking")
 
+                # KB 的 chunk_size/chunk_overlap 真正生效；KB 缺失时回落默认值
+                kb = await db.get(KnowledgeBase, doc.kb_id)
+                chunk_size = kb.chunk_size if kb is not None else 512
+                chunk_overlap = kb.chunk_overlap if kb is not None else 64
+
                 def _split_pages() -> list[tuple[str, dict]]:
                     out: list[tuple[str, dict]] = []
-                    for page_no, page_text in pages:
-                        for piece in split_text(page_text):
-                            out.append((piece, {"page": page_no}))
+                    for page_no, page_text in parsed.pages:
+                        if parsed.kind == KIND_MARKDOWN:
+                            for piece, headings in split_markdown(
+                                page_text, chunk_size, chunk_overlap
+                            ):
+                                out.append((piece, {"page": page_no, "headings": headings}))
+                        else:
+                            for piece in split_text(page_text, chunk_size, chunk_overlap):
+                                out.append((piece, {"page": page_no}))
                     return out
 
                 pieces = await asyncio.to_thread(_split_pages)
@@ -125,7 +137,7 @@ async def run_ingest(
                         index += 1
                     await db.flush()
                 doc.chunk_count = len(pieces)
-                doc.meta = {**meta_pages, "pages": len(pages)}
+                doc.meta = {**meta_pages, "pages": len(parsed.pages)}
                 await _set_status(db, doc, "ready")
             except asyncio.CancelledError:
                 # arq 超时/取消抛 BaseException，逃逸会让文档永久停在非终态（前端无限轮询）

@@ -29,7 +29,10 @@ def test_splitter_normalizes_crlf():
 
 
 async def _seed_doc(
-    session_maker, upload_dir: Path, content: str = "# 标题\n内容。\n\n第二段。"
+    session_maker,
+    upload_dir: Path,
+    content: str = "# 标题\n内容。\n\n第二段。",
+    file_type: str = "md",
 ) -> tuple:
     async with session_maker() as db:
         u = User(
@@ -43,12 +46,12 @@ async def _seed_doc(
         kb = KnowledgeBase(owner_id=u.id, name="K")
         db.add(kb)
         await db.flush()
-        path = upload_dir / f"{uuid.uuid4()}.md"
+        path = upload_dir / f"{uuid.uuid4()}.{file_type}"
         path.write_text(content, encoding="utf-8")
         doc = Document(
             kb_id=kb.id,
-            filename="a.md",
-            file_type="md",
+            filename=f"a.{file_type}",
+            file_type=file_type,
             size_bytes=len(content),
             meta={"stored_name": path.name},
         )
@@ -181,3 +184,56 @@ async def test_run_ingest_reuses_single_provider(session_maker, tmp_path):
     assert len(created) == 1 and closed == [1]
     assert created[0].embed_calls
     assert created[0].embed_calls[0][1] == settings.embedding_model
+
+
+async def test_run_ingest_uses_kb_chunk_size(session_maker, tmp_path):
+    from app.ai.rag.pipeline import run_ingest
+    from app.models import Chunk, KnowledgeBase
+
+    doc_id, kb_id = await _seed_doc(session_maker, tmp_path, content="段落内容。" * 200)
+    async with session_maker() as db:
+        kb = await db.get(KnowledgeBase, uuid.UUID(kb_id))
+        kb.chunk_size = 100
+        kb.chunk_overlap = 0
+        await db.commit()
+
+    async def fake_embedder(texts: list[str]) -> list[list[float]]:
+        return [[0.0] * 1024 for _ in texts]
+
+    await run_ingest(
+        doc_id, embedder=fake_embedder, upload_dir=str(tmp_path), session_factory=session_maker
+    )
+    async with session_maker() as db:
+        chunks = (
+            await db.scalars(select(Chunk).where(Chunk.kb_id == uuid.UUID(kb_id)))
+        ).all()
+        # 1000 字 / 100 字一块 → 远多于默认 512 时的块数
+        assert len(chunks) >= 8
+
+
+async def test_run_ingest_markdown_chunks_carry_headings(session_maker, tmp_path, monkeypatch):
+    from app.ai.rag import mineru_client
+    from app.ai.rag.pipeline import run_ingest
+    from app.core.config import settings
+    from app.models import Chunk
+
+    content = "# 第一章\n内容甲。\n\n## 1.1 小节\n内容乙。"
+    # 生产上 Markdown 产物由 PDF/DOCX 经 MinerU 解析得到，故这里以 pdf 入参并伪造 MinerU 返回，
+    # 才能让 extract_document 真正产出 kind="markdown"（md/txt 走内置解析，产物是纯文本）。
+    doc_id, kb_id = await _seed_doc(session_maker, tmp_path, content=content, file_type="pdf")
+    monkeypatch.setattr(settings, "mineru_api_url", "http://mineru.test:8001")
+    monkeypatch.setattr(mineru_client, "parse_markdown", lambda path, file_type: content)
+
+    async def fake_embedder(texts: list[str]) -> list[list[float]]:
+        return [[0.0] * 1024 for _ in texts]
+
+    await run_ingest(
+        doc_id, embedder=fake_embedder, upload_dir=str(tmp_path), session_factory=session_maker
+    )
+    async with session_maker() as db:
+        chunks = (
+            await db.scalars(select(Chunk).where(Chunk.kb_id == uuid.UUID(kb_id)))
+        ).all()
+        heading_paths = [c.meta.get("headings") for c in chunks]
+        assert ["第一章"] in heading_paths
+        assert ["第一章", "1.1 小节"] in heading_paths
