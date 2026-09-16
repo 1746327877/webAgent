@@ -33,7 +33,8 @@ class ItemResult:
     question: str
     expect_sources: list[str]
     hit_rank: int | None
-    top_sources: list[str]
+    # 排名在命中块之前的来源；未命中时取实际 top3——用于归因"谁挤掉了它"
+    above_sources: list[str]
 
 
 @dataclass
@@ -44,10 +45,11 @@ class EvalReport:
     mrr: float
     # 名次 → 条数（0 表示在 top_k 内完全未命中）；用于快速看出"差在哪一名"
     rank_counts: dict[int, int]
-    misses: list[ItemResult]
+    misses: list[ItemResult]      # top_k 内完全未命中
+    off_rank: list[ItemResult]    # 命中但没排到第 1 名，含实际名次
 
     def format(self) -> str:
-        """人读报告：指标摘要 + 名次分布 + 未命中明细（直接指出该往哪调）。"""
+        """人读报告：指标摘要 + 名次分布 + 需要归因的条目明细。"""
         histogram = " · ".join(
             ([f"未命中 {self.rank_counts[0]} 条"] if self.rank_counts.get(0) else [])
             + [
@@ -62,16 +64,24 @@ class EvalReport:
             f"MRR: {self.mrr:.3f}",
             f"名次分布: {histogram}",
         ]
-        if not self.misses:
-            return "\n".join(lines)
-        lines.append(f"top_k 内未命中 {len(self.misses)} 条：")
-        for miss in self.misses:
-            got = "、".join(miss.top_sources) or "（无结果）"
-            lines.append(
-                f"  - {miss.question}\n"
-                f"      期望来源：{'、'.join(miss.expect_sources)}\n"
-                f"      实际 top3：{got}"
-            )
+        if self.off_rank:
+            lines.append(f"未排到第 1 名 {len(self.off_rank)} 条（被谁挤掉）：")
+            for item in self.off_rank:
+                above = "、".join(item.above_sources) or "（无）"
+                lines.append(
+                    f"  - {item.question}\n"
+                    f"      期望来源：{'、'.join(item.expect_sources)}\n"
+                    f"      实际第 {item.hit_rank} 名，前面是：{above}"
+                )
+        if self.misses:
+            lines.append(f"top_k 内完全未命中 {len(self.misses)} 条：")
+            for miss in self.misses:
+                got = "、".join(miss.above_sources) or "（无结果）"
+                lines.append(
+                    f"  - {miss.question}\n"
+                    f"      期望来源：{'、'.join(miss.expect_sources)}\n"
+                    f"      实际 top3：{got}"
+                )
         return "\n".join(lines)
 
 
@@ -124,21 +134,24 @@ def score(
 
     ranks: list[int | None] = []
     misses: list[ItemResult] = []
+    off_rank: list[ItemResult] = []
     for item in golden:
         chunks = retrieved.get(item.question, [])
         rank = next(
             (index for index, chunk in enumerate(chunks, 1) if is_hit(item, chunk)), None
         )
         ranks.append(rank)
-        if rank is None:
-            misses.append(
-                ItemResult(
-                    question=item.question,
-                    expect_sources=item.expect_sources,
-                    hit_rank=None,
-                    top_sources=[chunk.source for chunk in chunks[:3]],
-                )
-            )
+        if rank == 1:
+            continue
+        # 命中但没排第一 → 取排在它前面的来源；完全未命中 → 取实际 top3，便于归因
+        above = [chunk.source for chunk in chunks[: (rank - 1) if rank else 3]]
+        result = ItemResult(
+            question=item.question,
+            expect_sources=item.expect_sources,
+            hit_rank=rank,
+            above_sources=above,
+        )
+        (misses if rank is None else off_rank).append(result)
 
     total = len(golden)
     recall_at = {
@@ -156,6 +169,7 @@ def score(
         mrr=mrr,
         rank_counts=rank_counts,
         misses=misses,
+        off_rank=off_rank,
     )
 
 
