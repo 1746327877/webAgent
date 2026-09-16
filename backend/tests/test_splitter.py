@@ -1,4 +1,4 @@
-from app.ai.rag.splitter import split_text
+from app.ai.rag.splitter import split_markdown, split_text
 
 
 def test_short_text_not_split():
@@ -17,3 +17,36 @@ def test_falls_back_to_hard_split():
     chunks = split_text("字" * 250, size=100, overlap=20)
     assert len(chunks) >= 3
     assert all(len(c) <= 100 for c in chunks)
+
+
+def test_markdown_does_not_cross_sections():
+    text = "# 第一章\n" + "甲" * 300 + "\n\n# 第二章\n" + "乙" * 300
+    chunks = split_markdown(text, size=100, overlap=0)
+    first = [c for c, _ in chunks if "甲" in c]
+    second = [c for c, _ in chunks if "乙" in c]
+    assert first and second
+    assert all("乙" not in c for c in first)
+    assert all("甲" not in c for c in second)
+    assert all(h == ["第一章"] for c, h in chunks if "甲" in c)
+    assert all(h == ["第二章"] for c, h in chunks if "乙" in c)
+
+
+def test_markdown_keeps_heading_line_in_body():
+    chunks = split_markdown("# 标题A\n正文内容。", size=100)
+    assert len(chunks) == 1
+    assert chunks[0][0].startswith("# 标题A")   # 标题词必须进正文，才能进向量
+    assert chunks[0][1] == ["标题A"]
+
+
+def test_markdown_ignores_hash_inside_code_fence():
+    text = "# 真标题\n\n```bash\n# 这是代码注释\n```\n\n正文。"
+    chunks = split_markdown(text, size=100)
+    assert len(chunks) == 1
+    assert chunks[0][1] == ["真标题"]
+
+
+def test_markdown_heading_path_is_nested():
+    text = "# 第一章\n\n## 1.1 小节\n\n小节内容。"
+    chunks = split_markdown(text, size=100)
+    paths = [h for c, h in chunks if "小节内容" in c]
+    assert paths == [["第一章", "1.1 小节"]]
