@@ -16,7 +16,10 @@ logger = logging.getLogger("app.rag.parser")
 # 需要 MinerU 能力（含 OCR / 表格 / 公式）的输入类型
 MINERU_TYPES = {"pdf", "docx"}
 
-# 解析产物格式：MinerU 输出 Markdown；内置解析输出纯文本
+# 本身就是 Markdown 的类型：内置解析只读取原文、不改结构，产物仍带 Markdown 结构
+MARKDOWN_TYPES = {"md", "markdown"}
+
+# 解析产物格式：MinerU 产物与 .md/.markdown 原文均为 Markdown，其余为纯文本
 KIND_MARKDOWN = "markdown"
 KIND_TEXT = "text"
 
@@ -28,7 +31,7 @@ class ParsedDoc:
 
 
 def extract_document(path: Path, file_type: str) -> ParsedDoc:
-    """解析文档为 ParsedDoc；PDF/DOCX 走 MinerU（成功即 Markdown），其余走内置解析。"""
+    """解析文档为 ParsedDoc：MinerU 成功或 `.md`/`.markdown` 上传 → markdown，其余 → text。"""
     if file_type in MINERU_TYPES and mineru_client.is_enabled():
         try:
             markdown = mineru_client.parse_markdown(path, file_type)
@@ -42,4 +45,5 @@ def extract_document(path: Path, file_type: str) -> ParsedDoc:
 
     from app.ai.rag.parsers import extract_text
 
-    return ParsedDoc(kind=KIND_TEXT, pages=extract_text(path, file_type))
+    kind = KIND_MARKDOWN if file_type in MARKDOWN_TYPES else KIND_TEXT
+    return ParsedDoc(kind=kind, pages=extract_text(path, file_type))

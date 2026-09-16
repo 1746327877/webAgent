@@ -53,7 +53,7 @@ def test_disabled_skips_mineru(tmp_path, monkeypatch):
     assert result == ParsedDoc(kind="text", pages=[(None, "builtin")])
 
 
-def test_markdown_type_never_uses_mineru(tmp_path, monkeypatch):
+def test_markdown_type_skips_mineru_and_is_classified_markdown(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "mineru_api_url", "http://mineru.test:8001")
 
     def should_not_call(path, file_type):
@@ -63,4 +63,4 @@ def test_markdown_type_never_uses_mineru(tmp_path, monkeypatch):
     path = tmp_path / "note.md"
     path.write_text("# note", encoding="utf-8")
     result = document_parser.extract_document(path, "md")
-    assert result == ParsedDoc(kind="text", pages=[(None, "# note")])
+    assert result == ParsedDoc(kind="markdown", pages=[(None, "# note")])
