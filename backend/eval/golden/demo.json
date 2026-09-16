@@ -1,0 +1,82 @@
+{
+  "items": [
+    {
+      "question": "向量检索常用的距离度量有哪几种？",
+      "expect_sources": ["vector-search.md"],
+      "expect_substrings": ["余弦相似度"],
+      "note": "表格所在小节：距离度量"
+    },
+    {
+      "question": "余弦相似度的特点是什么？",
+      "expect_sources": ["vector-search.md"],
+      "expect_substrings": ["只看方向"],
+      "note": "命中表格单元格"
+    },
+    {
+      "question": "内积计算有什么前提？",
+      "expect_sources": ["vector-search.md"],
+      "expect_substrings": ["归一化"],
+      "note": "命中表格单元格"
+    },
+    {
+      "question": "欧氏距离越小越像吗？",
+      "expect_sources": ["vector-search.md"],
+      "expect_substrings": ["越小越像"]
+    },
+    {
+      "question": "HNSW 是怎么加速最近邻搜索的？",
+      "expect_sources": ["vector-search.md"],
+      "expect_substrings": ["分层图"]
+    },
+    {
+      "question": "为什么纯向量检索对型号和编号不敏感？",
+      "expect_sources": ["vector-search.md"],
+      "expect_substrings": ["专有名词"]
+    },
+    {
+      "question": "RRF 融合为什么不需要对齐量纲？",
+      "expect_sources": ["vector-search.md"],
+      "expect_substrings": ["名次"]
+    },
+    {
+      "question": "线程池的核心参数有哪些？",
+      "expect_sources": ["thread-pool.md"],
+      "expect_substrings": ["corePoolSize"]
+    },
+    {
+      "question": "maximumPoolSize 一般设成多少？",
+      "expect_sources": ["thread-pool.md"],
+      "expect_substrings": ["2 倍"]
+    },
+    {
+      "question": "keepAliveTime 的常见取值是多少秒？",
+      "expect_sources": ["thread-pool.md"],
+      "expect_substrings": ["60"]
+    },
+    {
+      "question": "线程池默认的拒绝策略是什么？",
+      "expect_sources": ["thread-pool.md"],
+      "expect_substrings": ["AbortPolicy"]
+    },
+    {
+      "question": "workQueue 应该优先选哪种队列？",
+      "expect_sources": ["thread-pool.md"],
+      "expect_substrings": ["有界队列"]
+    },
+    {
+      "question": "为什么无界队列会让 maximumPoolSize 失效？",
+      "expect_sources": ["thread-pool.md"],
+      "expect_substrings": ["堆积"]
+    },
+    {
+      "question": "任务把队列堆满之后会发生什么？",
+      "expect_sources": ["thread-pool.md"],
+      "expect_substrings": ["拒绝策略"]
+    },
+    {
+      "question": "空闲线程多久会被回收？",
+      "expect_sources": ["thread-pool.md"],
+      "expect_substrings": ["60"]
+    }
+  ]
+}
