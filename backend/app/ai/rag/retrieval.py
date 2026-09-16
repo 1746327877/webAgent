@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 TOP_CHANNEL = 40
 RRF_K = 60
+# 同一张表被切成多块时，块间共享"重复表头 + 语义前缀"，很容易一起霸占 top_k；
+# 因此多取一些候选，融合后按 (文档, 表序号) 去重（见 docs/设计/21）。
+FETCH_FACTOR = 4
 # 引用来源标签的层级分隔符，format_context 与前端展示保持一致
 HEADING_SEPARATOR = " › "
 
@@ -70,11 +73,13 @@ async def hybrid_search(
             ) t
             GROUP BY id
         )
-        SELECT c.id, c.content, c.meta, d.filename, f.rrf_score, f.channel_hits, f.similarity
+        SELECT c.id, c.document_id, c.content, c.meta, d.filename, f.rrf_score,
+               f.channel_hits, f.similarity
         FROM fused f JOIN chunks c ON c.id = f.id JOIN documents d ON d.id = c.document_id
-        ORDER BY f.rrf_score DESC, c.id LIMIT :top_k
+        ORDER BY f.rrf_score DESC, c.id LIMIT :fetch
         """
     )
+    fetch_limit = max(top_k * FETCH_FACTOR, top_k + 10)
     async with session_maker() as db:
         rows = (
             await db.execute(
@@ -85,12 +90,12 @@ async def hybrid_search(
                     "tokens": tokens,
                     "chan": TOP_CHANNEL,
                     "rrf": RRF_K,
-                    "top_k": top_k,
+                    "fetch": fetch_limit,
                 },
             )
         ).all()
     out = []
-    for row in rows:
+    for row in _dedupe_table_chunks(rows, top_k):
         meta = row.meta or {}
         out.append(
             RetrievedChunk(
@@ -105,6 +110,28 @@ async def hybrid_search(
             )
         )
     return out
+
+
+def _dedupe_table_chunks(rows, limit: int) -> list:
+    """同一张表的多个切片只保留名次最高的一块，把位置让给其它来源。
+
+    表切片由 `meta.table_index` 标记（见 docs/设计/21）；非表格块原样保留。
+    必须在 SQL 取回更多候选之后做，否则去重会把结果集直接掏空。
+    """
+    seen: set[tuple[str, str]] = set()
+    kept = []
+    for row in rows:
+        meta = row.meta or {}
+        table_index = meta.get("table_index")
+        if table_index is not None:
+            key = (str(row.document_id), str(table_index))
+            if key in seen:
+                continue
+            seen.add(key)
+        kept.append(row)
+        if len(kept) >= limit:
+            break
+    return kept
 
 
 def _source_label(chunk: RetrievedChunk) -> str:

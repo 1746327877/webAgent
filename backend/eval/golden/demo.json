@@ -77,6 +77,92 @@
       "question": "空闲线程多久会被回收？",
       "expect_sources": ["thread-pool.md"],
       "expect_substrings": ["60"]
+    },
+    {
+      "question": "BM25 的词频部分为什么要做饱和？",
+      "expect_sources": ["bm25.md"],
+      "expect_substrings": ["饱和函数"],
+      "note": "与 vector-search.md 的'距离度量'小节区分：答案只在 bm25.md"
+    },
+    {
+      "question": "逆文档频率衡量的是什么？",
+      "expect_sources": ["bm25.md"],
+      "expect_substrings": ["区分度"]
+    },
+    {
+      "question": "停用词为什么通常直接过滤掉？",
+      "expect_sources": ["bm25.md"],
+      "expect_substrings": ["通常直接过滤掉"]
+    },
+    {
+      "question": "HNSW 的构建代价是什么？",
+      "expect_sources": ["vector-db.md"],
+      "expect_substrings": ["构建慢"],
+      "note": "vector-search.md 也讲 HNSW，但不是构建代价"
+    },
+    {
+      "question": "IVF 配合 PQ 的收益和代价分别是什么？",
+      "expect_sources": ["vector-db.md"],
+      "expect_substrings": ["压缩内存"]
+    },
+    {
+      "question": "DiskANN 依赖什么硬件？",
+      "expect_sources": ["vector-db.md"],
+      "expect_substrings": ["SSD"]
+    },
+    {
+      "question": "哪些任务才该丢给线程池？",
+      "expect_sources": ["async-executor.md"],
+      "expect_substrings": ["阻塞式调用"]
+    },
+    {
+      "question": "CompletableFuture 默认用哪个线程池？",
+      "expect_sources": ["async-executor.md"],
+      "expect_substrings": ["commonPool"]
+    },
+    {
+      "question": "在 commonPool 上跑阻塞任务会有什么后果？",
+      "expect_sources": ["async-executor.md"],
+      "expect_substrings": ["占满"]
+    },
+    {
+      "question": "G1 是怎么控制停顿时间的？",
+      "expect_sources": ["jvm-gc.md"],
+      "expect_substrings": ["Region"]
+    },
+    {
+      "question": "ZGC 的代价是什么？",
+      "expect_sources": ["jvm-gc.md"],
+      "expect_substrings": ["内存开销"]
+    },
+    {
+      "question": "GC 长停顿为什么容易被误判成线程池问题？",
+      "expect_sources": ["jvm-gc.md"],
+      "expect_substrings": ["全局停顿"],
+      "note": "干扰项：jvm-gc.md 里也出现了'线程池'"
+    },
+    {
+      "question": "型号 M03 的精度是多少？",
+      "expect_sources": ["spec-sheet.md"],
+      "expect_substrings": ["M03"],
+      "note": "大表前段：验证表格切片后行仍可定位"
+    },
+    {
+      "question": "型号 M15 的精度是多少？",
+      "expect_sources": ["spec-sheet.md"],
+      "expect_substrings": ["M15"],
+      "note": "大表中段"
+    },
+    {
+      "question": "型号 M24 的温漂是多少？",
+      "expect_sources": ["spec-sheet.md"],
+      "expect_substrings": ["M24"],
+      "note": "大表末段"
+    },
+    {
+      "question": "选型时量程要留多少余量？",
+      "expect_sources": ["spec-sheet.md"],
+      "expect_substrings": ["20%"]
     }
   ]
 }

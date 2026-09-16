@@ -78,6 +78,64 @@ async def test_hybrid_search_empty_kbs(session_maker):
     assert await hybrid_search(session_maker, [], "x", top_k=5, embedder=emb) == []
 
 
+async def _seed_table(session_maker):
+    """同一张表切成三块（共享 table_index），另有一块非表格内容。"""
+    from app.models import Chunk, Document, KnowledgeBase, User
+
+    async with session_maker() as db:
+        user = User(id=uuid.uuid4(), username="bob", email="b@e.com", password_hash="x")
+        db.add(user)
+        await db.flush()
+        kb = KnowledgeBase(owner_id=user.id, name="T")
+        db.add(kb)
+        await db.flush()
+        doc = Document(kb_id=kb.id, filename="spec.md", file_type="md", size_bytes=1)
+        db.add(doc)
+        await db.flush()
+
+        def vec(pos: int, tail: float = 0.0) -> list[float]:
+            v = [0.0] * 1024
+            v[pos] = 1.0
+            if tail:
+                v[(pos + 1) % 1024] = tail
+            return v
+
+        db.add_all(
+            [
+                Chunk(document_id=doc.id, kb_id=kb.id, content="表第一片", content_tokens="表 第一 片",
+                      chunk_index=0, embedding=vec(0),
+                      meta={"page": 1, "kind": "table", "table_index": 0}),
+                Chunk(document_id=doc.id, kb_id=kb.id, content="表第二片", content_tokens="表 第二 片",
+                      chunk_index=1, embedding=vec(0, 0.5),
+                      meta={"page": 1, "kind": "table", "table_index": 0}),
+                Chunk(document_id=doc.id, kb_id=kb.id, content="表第三片", content_tokens="表 第三 片",
+                      chunk_index=2, embedding=vec(0, 0.25),
+                      meta={"page": 1, "kind": "table", "table_index": 0}),
+                Chunk(document_id=doc.id, kb_id=kb.id, content="非表格正文", content_tokens="非 表格 正文",
+                      chunk_index=3, embedding=vec(2)),
+            ]
+        )
+        await db.commit()
+        return str(kb.id)
+
+
+async def test_hybrid_search_dedupes_chunks_of_same_table(session_maker):
+    from app.ai.rag.retrieval import hybrid_search
+
+    kb_id = await _seed_table(session_maker)
+
+    async def embed(texts: list[str]) -> list[list[float]]:
+        vec = [0.0] * 1024
+        vec[0] = 1.0
+        return [vec for _ in texts]
+
+    chunks = await hybrid_search(
+        session_maker, [uuid.UUID(kb_id)], "表", top_k=2, embedder=embed
+    )
+    # 同一张表只保留名次最高的一片，把第二个位置让给其它来源
+    assert [c.content for c in chunks] == ["表第一片", "非表格正文"]
+
+
 async def test_format_context_numbers_sources(session_maker):
     from app.ai.rag.retrieval import RetrievedChunk, format_context
 

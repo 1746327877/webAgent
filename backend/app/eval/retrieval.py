@@ -42,19 +42,29 @@ class EvalReport:
     at: tuple[int, ...]
     recall_at: dict[int, float]
     mrr: float
+    # 名次 → 条数（0 表示在 top_k 内完全未命中）；用于快速看出"差在哪一名"
+    rank_counts: dict[int, int]
     misses: list[ItemResult]
 
     def format(self) -> str:
-        """人读报告：指标摘要 + 未命中明细（直接指出该往哪调）。"""
+        """人读报告：指标摘要 + 名次分布 + 未命中明细（直接指出该往哪调）。"""
+        histogram = " · ".join(
+            ([f"未命中 {self.rank_counts[0]} 条"] if self.rank_counts.get(0) else [])
+            + [
+                f"第{rank}名 {count} 条"
+                for rank, count in sorted(self.rank_counts.items())
+                if rank > 0
+            ]
+        )
         lines = [
             f"共 {self.total} 条",
             "recall@k: " + "  ".join(f"@{k}={self.recall_at[k]:.3f}" for k in self.at),
             f"MRR: {self.mrr:.3f}",
+            f"名次分布: {histogram}",
         ]
         if not self.misses:
-            lines.append("全部命中")
             return "\n".join(lines)
-        lines.append(f"未命中 {len(self.misses)} 条：")
+        lines.append(f"top_k 内未命中 {len(self.misses)} 条：")
         for miss in self.misses:
             got = "、".join(miss.top_sources) or "（无结果）"
             lines.append(
@@ -135,7 +145,18 @@ def score(
         k: sum(1 for rank in ranks if rank is not None and rank <= k) / total for k in at
     }
     mrr = sum(1 / rank for rank in ranks if rank is not None) / total
-    return EvalReport(total=total, at=at, recall_at=recall_at, mrr=mrr, misses=misses)
+    rank_counts: dict[int, int] = {}
+    for rank in ranks:
+        key = rank if rank is not None else 0
+        rank_counts[key] = rank_counts.get(key, 0) + 1
+    return EvalReport(
+        total=total,
+        at=at,
+        recall_at=recall_at,
+        mrr=mrr,
+        rank_counts=rank_counts,
+        misses=misses,
+    )
 
 
 async def evaluate(

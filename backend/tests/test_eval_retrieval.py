@@ -48,6 +48,7 @@ def test_score_recall_and_mrr():
     assert report.recall_at[2] == pytest.approx(2 / 3)
     assert report.recall_at[5] == pytest.approx(2 / 3)
     assert report.mrr == pytest.approx((1 + 0.5) / 3)
+    assert report.rank_counts == {1: 1, 2: 1, 0: 1}
     assert [miss.question for miss in report.misses] == ["q3"]
     assert report.misses[0].top_sources == ["z.md"]
     assert "未命中 1 条" in report.format()
@@ -57,7 +58,19 @@ def test_score_all_hit_reports_clean():
     golden = [GoldenItem(question="q", expect_sources=["a.md"])]
     report = score(golden, {"q": [FakeChunk("a.md", "x")]}, at=(1,))
     assert report.recall_at[1] == 1.0 and report.mrr == 1.0
-    assert "全部命中" in report.format()
+    assert report.rank_counts == {1: 1}
+    assert "第1名 1 条" in report.format()
+
+
+def test_format_reports_low_rank_without_calling_it_miss():
+    # 只在第 2 名命中时，recall@1 < 1，但不应被报成"未命中"
+    golden = [GoldenItem(question="q", expect_sources=["a.md"])]
+    report = score(
+        golden, {"q": [FakeChunk("z.md", "x"), FakeChunk("a.md", "y")]}, at=(1, 5)
+    )
+    text = report.format()
+    assert report.recall_at[1] == 0.0 and report.misses == []
+    assert "第2名 1 条" in text and "未命中" not in text
 
 
 def test_score_rejects_empty_golden():
