@@ -5,13 +5,13 @@ import jieba
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.ai.rag.splitter import HEADING_SEPARATOR
+
 TOP_CHANNEL = 40
 RRF_K = 60
 # 同一张表被切成多块时，块间共享"重复表头 + 语义前缀"，很容易一起霸占 top_k；
 # 因此多取一些候选，融合后按 (文档, 表序号) 去重（见 docs/设计/21）。
 FETCH_FACTOR = 4
-# 引用来源标签的层级分隔符，format_context 与前端展示保持一致
-HEADING_SEPARATOR = " › "
 
 
 @dataclass

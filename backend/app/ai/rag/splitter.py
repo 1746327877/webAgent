@@ -5,6 +5,9 @@ from collections.abc import Sequence
 # 刻意不含 . , ; ——避免把 v1.2.3 / 小数 / 代码语句从中间切开。
 SEPARATORS: tuple[str, ...] = ("\n\n", "\n", "。", "！", "？", "；", " ", "")
 
+# 章节路径分隔符：表格前缀与检索来源标签共用，保证正文与前端展示一致
+HEADING_SEPARATOR = " › "
+
 
 def _hard_split(block: str, size: int, overlap: int) -> list[str]:
     """按固定步长硬切，作为所有分隔符都用尽时的兜底（保证块长 <= size）。"""
@@ -153,6 +156,20 @@ def _render_table_chunk(prefix: str, header_lines: list[str], rows: list[str]) -
     return f"{prefix}\n{body}" if prefix else body
 
 
+def _table_prefix(headings: list[str]) -> str:
+    """表格切片的语义前缀：只补所属小节路径。
+
+    小节标题行会被归到表格**前面**的文本块里，表格切片本身没有它，所以补上能让
+    用小节措辞提问（"核心参数有哪些"）的问题命中表格切片。
+
+    刻意不再拼"【表格 · 列：…】"：列名已经在表头行里，重复的模板会让所有表格切片
+    的向量互相靠近，实测反而伤害区分度（见 docs/设计/22 §22.7）。
+    """
+    if not headings:
+        return ""
+    return HEADING_SEPARATOR.join(headings)
+
+
 def _split_oversized_table(
     text: str, size: int, overlap: int, base_meta: dict
 ) -> list[tuple[str, dict]]:
@@ -164,7 +181,7 @@ def _split_oversized_table(
 
 
 def _split_table(
-    text: str, size: int, overlap: int, table_index: int
+    text: str, size: int, overlap: int, table_index: int, headings: list[str]
 ) -> list[tuple[str, dict]]:
     """表格块：管道表整块优先、超长按行组切并重复表头；HTML 表整块保留。
 
@@ -174,21 +191,23 @@ def _split_table(
     if rows is None:
         # HTML 表不解析行结构：header 固定为空列表，保证 meta 契约统一（消费方不用判 KeyError）
         base_meta = {"kind": "table", "header": [], "table_index": table_index}
-        if len(text) <= size:
-            return [(text, base_meta)]
-        return _split_oversized_table(text, size, overlap, base_meta)
+        prefix = _table_prefix(headings)
+        rendered = f"{prefix}\n{text}" if prefix else text
+        if len(rendered) <= size:
+            return [(rendered, base_meta)]
+        return _split_oversized_table(rendered, size, overlap, base_meta)
 
     header_cells = _header_cells(rows[0])
     header_lines = rows[:2]  # 表头行 + 分隔行
     data_rows = rows[2:]
-    prefix = f"【表格 · 列：{'、'.join(header_cells)}】" if header_cells else ""
+    prefix = _table_prefix(headings)
     base_meta = {"kind": "table", "header": header_cells, "table_index": table_index}
 
     rendered = _render_table_chunk(prefix, header_lines, data_rows)
     if len(rendered) <= size:
         return [(rendered, {**base_meta, "row_range": [0, len(data_rows)]})]
     if not data_rows:
-        return _split_oversized_table(text, size, overlap, base_meta)
+        return _split_oversized_table(rendered, size, overlap, base_meta)
 
     chunks: list[tuple[str, dict]] = []
     current: list[str] = []
@@ -270,7 +289,7 @@ def split_markdown(
                 for piece in _recursive_split(block, size, overlap, SEPARATORS):
                     out.append((piece, {"headings": list(headings)}))
                 continue
-            for piece, extra in _split_table(block, size, overlap, table_index):
+            for piece, extra in _split_table(block, size, overlap, table_index, headings):
                 out.append((piece, {"headings": list(headings), **extra}))
             table_index += 1
     return out

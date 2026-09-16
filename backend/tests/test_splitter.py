@@ -92,13 +92,22 @@ def test_short_table_kept_whole_with_meta():
     table_chunks = [(c, e) for c, e in chunks if e.get("kind") == "table"]
     assert len(table_chunks) == 1
     body, extra = table_chunks[0]
-    # 语义前缀与表格原文在同一块里，列名能进向量与全文索引
-    assert body.startswith("【表格 · 列：参数、值、说明】")
+    # 前缀带上所属小节（标题行落在前面的文本块里，表格切片自己只有表头与数据）
+    assert body.startswith("规格\n| 参数 | 值 | 说明 |")
     assert "| 精度 | ±1% | 直流 |" in body
     assert extra["header"] == ["参数", "值", "说明"]
     assert extra["row_range"] == [0, 2]
     assert extra["headings"] == ["规格"]
     assert extra["table_index"] == 0
+
+
+def test_table_prefix_carries_section_path():
+    # 小节标题的措辞要能出现在表格切片里，否则"核心参数有哪些"这类问题会被散文切片抢走
+    text = "# 线程池参数速查\n\n## 核心参数\n\n| 参数 | 含义 |\n| --- | --- |\n| corePoolSize | 核心线程数 |"
+    chunks = split_markdown(text, size=500)
+    table_body = next(c for c, e in chunks if e.get("kind") == "table")
+    assert "线程池参数速查 › 核心参数" in table_body
+    assert "corePoolSize" in table_body
 
 
 def test_long_table_split_with_header_repeated():
