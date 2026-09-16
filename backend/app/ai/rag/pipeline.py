@@ -97,10 +97,10 @@ async def run_ingest(
                     out: list[tuple[str, dict]] = []
                     for page_no, page_text in parsed.pages:
                         if parsed.kind == KIND_MARKDOWN:
-                            for piece, headings in split_markdown(
+                            for piece, extra in split_markdown(
                                 page_text, chunk_size, chunk_overlap
                             ):
-                                out.append((piece, {"page": page_no, "headings": headings}))
+                                out.append((piece, {"page": page_no, **extra}))
                         else:
                             for piece in split_text(page_text, chunk_size, chunk_overlap):
                                 out.append((piece, {"page": page_no}))

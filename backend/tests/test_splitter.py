@@ -52,26 +52,94 @@ def test_markdown_does_not_cross_sections():
     assert first and second
     assert all("乙" not in c for c in first)
     assert all("甲" not in c for c in second)
-    assert all(h == ["第一章"] for c, h in chunks if "甲" in c)
-    assert all(h == ["第二章"] for c, h in chunks if "乙" in c)
+    assert all(e["headings"] == ["第一章"] for c, e in chunks if "甲" in c)
+    assert all(e["headings"] == ["第二章"] for c, e in chunks if "乙" in c)
 
 
 def test_markdown_keeps_heading_line_in_body():
     chunks = split_markdown("# 标题A\n正文内容。", size=100)
     assert len(chunks) == 1
-    assert chunks[0][0].startswith("# 标题A")   # 标题词必须进正文，才能进向量
-    assert chunks[0][1] == ["标题A"]
+    assert chunks[0][0].startswith("# 标题A")  # 标题词必须进正文，才能进向量
+    assert chunks[0][1]["headings"] == ["标题A"]
 
 
 def test_markdown_ignores_hash_inside_code_fence():
     text = "# 真标题\n\n```bash\n# 这是代码注释\n```\n\n正文。"
     chunks = split_markdown(text, size=100)
     assert len(chunks) == 1
-    assert chunks[0][1] == ["真标题"]
+    assert chunks[0][1]["headings"] == ["真标题"]
 
 
 def test_markdown_heading_path_is_nested():
     text = "# 第一章\n\n## 1.1 小节\n\n小节内容。"
     chunks = split_markdown(text, size=100)
-    paths = [h for c, h in chunks if "小节内容" in c]
+    paths = [e["headings"] for c, e in chunks if "小节内容" in c]
     assert paths == [["第一章", "1.1 小节"]]
+
+
+# ---- 表格切分（docs/设计/21）----
+
+TABLE = (
+    "| 参数 | 值 | 说明 |\n"
+    "| --- | --- | --- |\n"
+    "| 精度 | ±1% | 直流 |\n"
+    "| 范围 | 0-100Ω | 电阻 |\n"
+)
+
+
+def test_short_table_kept_whole_with_meta():
+    chunks = split_markdown("# 规格\n\n" + TABLE, size=500)
+    table_chunks = [(c, e) for c, e in chunks if e.get("kind") == "table"]
+    assert len(table_chunks) == 1
+    body, extra = table_chunks[0]
+    # 语义前缀与表格原文在同一块里，列名能进向量与全文索引
+    assert body.startswith("【表格 · 列：参数、值、说明】")
+    assert "| 精度 | ±1% | 直流 |" in body
+    assert extra["header"] == ["参数", "值", "说明"]
+    assert extra["row_range"] == [0, 2]
+    assert extra["headings"] == ["规格"]
+    assert extra["table_index"] == 0
+
+
+def test_long_table_split_with_header_repeated():
+    rows = "\n".join(f"| 行{i} | 数值{i} | 说明{i} |" for i in range(30))
+    text = "| 参数 | 值 | 说明 |\n| --- | --- | --- |\n" + rows
+    chunks = split_markdown(text, size=200)
+    assert len(chunks) > 1
+    for body, extra in chunks:
+        # 每块都必须重复表头，否则数据行没有列含义
+        assert "| 参数 | 值 | 说明 |" in body
+        assert "| --- | --- | --- |" in body
+        assert extra["kind"] == "table"
+        assert extra["header"] == ["参数", "值", "说明"]
+    # row_range 连续且完整覆盖 30 行数据
+    ranges = [extra["row_range"] for _, extra in chunks]
+    assert ranges[0][0] == 0
+    assert all(ranges[i][1] == ranges[i + 1][0] for i in range(len(ranges) - 1))
+    assert ranges[-1][1] == 30
+
+
+def test_table_stays_within_its_section():
+    text = "# A\n\n" + TABLE + "\n\n# B\n\n正文B。"
+    chunks = split_markdown(text, size=500)
+    table_chunks = [(c, e) for c, e in chunks if e.get("kind") == "table"]
+    assert len(table_chunks) == 1
+    assert table_chunks[0][1]["headings"] == ["A"]
+    assert all("正文B" not in c for c, _ in table_chunks)
+
+
+def test_html_table_kept_whole():
+    html = "<table>\n<tr><td>a</td><td>b</td></tr>\n</table>"
+    chunks = split_markdown("# T\n\n" + html, size=500)
+    table_chunks = [(c, e) for c, e in chunks if e.get("kind") == "table"]
+    assert len(table_chunks) == 1
+    body, extra = table_chunks[0]
+    assert "<table>" in body and "</table>" in body
+    assert extra["header"] == []
+
+
+def test_pipe_table_inside_code_fence_is_not_table():
+    text = "```\n| a | b |\n| --- | --- |\n| c | d |\n```"
+    chunks = split_markdown(text, size=500)
+    assert len(chunks) == 1
+    assert chunks[0][1].get("kind") is None
