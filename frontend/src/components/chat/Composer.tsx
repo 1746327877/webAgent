@@ -55,8 +55,9 @@ const MENTION_TAIL = /@([^\s@]*)$/;
 const MAX_MENTIONS = 2;
 /** 后端 MessageIn.attachment_ids 限制 max_length=3，前端同样封顶，避免必然 422 */
 export const MAX_ATTACHMENTS = 3;
-/** 与后端 ALLOWED_EXTS 对齐：图片 + 常见文档 */
-export const ATTACH_ACCEPT = ".png,.jpg,.jpeg,.webp,.pdf,.md,.markdown,.txt,.docx";
+/** 与后端 ALLOWED_EXTS 对齐：图片 + 常见文档 + 音频（音频走 ASR MCP 转写） */
+export const ATTACH_ACCEPT =
+  ".png,.jpg,.jpeg,.webp,.pdf,.md,.markdown,.txt,.docx,.mp3,.wav,.m4a,.mp4,.aac,.flac,.ogg,.webm,.amr";
 /** 拖放不受 file input 的 accept 约束，这里按扩展名做一次前端过滤 */
 const ACCEPT_EXTS = ATTACH_ACCEPT.split(",").map((s) => s.trim().replace(/^\./, "").toLowerCase());
 

@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     web_search_mcp_url: str = ""
     # OCR MCP（部署方自备的 OCR 服务）；为空表示图片回合不挂 OCR 工具
     ocr_mcp_url: str = ""
+    # 语音转写 MCP（外部 ASR 服务，见 docs/设计/23）；为空表示不支持音频附件转写
+    asr_mcp_url: str = ""
+    # 工具名覆盖；为空时自动选探测结果里名字含 "transcribe" 的第一个工具
+    asr_mcp_tool: str = ""
+    # 单个音频附件大小上限（默认 20MB，与文档一致）
+    asr_max_bytes: int = 20 * 1024 * 1024
 
 
 settings = Settings()

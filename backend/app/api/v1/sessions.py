@@ -205,6 +205,11 @@ async def post_message(
         for att in attachments
         if att.kind == "document"
     ]
+    audio_files = [
+        (str(upload_root / att.file_path), att.original_name)
+        for att in attachments
+        if att.kind == "audio"
+    ]
 
     async def gen():
         # 消费上一轮遗留的会话级停止标记，避免误杀本次请求的接力
@@ -220,6 +225,7 @@ async def post_message(
             web_search=body.web_search,
             image_paths=image_paths or None,
             document_files=document_files or None,
+            audio_files=audio_files or None,
             attachment_ids=[att.id for att in attachments] or None,
         ):
             yield chunk

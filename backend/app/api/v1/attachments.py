@@ -11,7 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_current_user
 from app.core.config import settings
 from app.core.db import get_db
-from app.core.upload_rules import IMAGE_EXTS, MIME_BY_EXT, has_valid_image_magic
+from app.core.upload_rules import (
+    AUDIO_EXTS,
+    IMAGE_EXTS,
+    MIME_BY_EXT,
+    has_valid_audio_magic,
+    has_valid_image_magic,
+)
 from app.models import Attachment
 from app.models.session import Session
 from app.models.user import User
@@ -19,11 +25,12 @@ from app.services import session_service
 
 router = APIRouter(tags=["attachments"])
 
-# 文档走文本提取注入，与知识库上传的类型保持一致（额外放宽 markdown 后缀）
+# 文档走文本提取注入，与知识库上传的类型保持一致（额外放宽 markdown 后缀）；音频走 ASR MCP（docs/设计/23）
 DOCUMENT_EXTS = {"pdf", "md", "markdown", "txt", "docx"}
-ALLOWED_EXTS = IMAGE_EXTS | DOCUMENT_EXTS
+ALLOWED_EXTS = IMAGE_EXTS | DOCUMENT_EXTS | AUDIO_EXTS
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
+ALLOWED_HINT = "仅支持 png/jpg/jpeg/webp 图片、pdf/md/markdown/txt/docx 文档与常见音频（mp3/wav/m4a/webm 等）"
 
 
 class AttachmentOut(BaseModel):
@@ -37,8 +44,12 @@ def stored_path(stored_name: str) -> Path:
     return Path(settings.upload_dir) / stored_name
 
 
-def _too_large_detail(is_image: bool) -> str:
-    return "图片超过 5MB" if is_image else "文档超过 20MB"
+def _too_large_detail(kind: str) -> str:
+    if kind == "image":
+        return "图片超过 5MB"
+    if kind == "audio":
+        return f"音频超过 {settings.asr_max_bytes // (1024 * 1024)}MB"
+    return "文档超过 20MB"
 
 
 @router.post("/sessions/{sid}/attachments", response_model=AttachmentOut, status_code=201)
@@ -51,20 +62,26 @@ async def upload_attachment(
     session = await session_service.get_owned_session(db, user, sid)
     ext = (file.filename or "").rsplit(".", 1)[-1].lower()
     if ext not in ALLOWED_EXTS:
-        raise HTTPException(
-            status_code=415,
-            detail="仅支持 png/jpg/jpeg/webp 图片与 pdf/md/markdown/txt/docx 文档",
-        )
-    is_image = ext in IMAGE_EXTS
-    max_bytes = MAX_IMAGE_BYTES if is_image else MAX_DOCUMENT_BYTES
+        raise HTTPException(status_code=415, detail=ALLOWED_HINT)
+    if ext in IMAGE_EXTS:
+        kind = "image"
+        max_bytes = MAX_IMAGE_BYTES
+    elif ext in AUDIO_EXTS:
+        kind = "audio"
+        max_bytes = settings.asr_max_bytes
+    else:
+        kind = "document"
+        max_bytes = MAX_DOCUMENT_BYTES
     # multipart 解析已完成，先用 size 预检；随后整读时再按实际长度二次校验
     if file.size is not None and file.size > max_bytes:
-        raise HTTPException(status_code=413, detail=_too_large_detail(is_image))
+        raise HTTPException(status_code=413, detail=_too_large_detail(kind))
     content = await file.read()
     if len(content) > max_bytes:
-        raise HTTPException(status_code=413, detail=_too_large_detail(is_image))
-    if is_image and not has_valid_image_magic(content, ext):
+        raise HTTPException(status_code=413, detail=_too_large_detail(kind))
+    if kind == "image" and not has_valid_image_magic(content, ext):
         raise HTTPException(status_code=415, detail="文件内容与图片类型不符")
+    if kind == "audio" and not has_valid_audio_magic(content, ext):
+        raise HTTPException(status_code=415, detail="文件内容不像音频（扩展名与实际格式不符）")
 
     stored_name = f"{uuid.uuid4()}.{ext}"
     path = stored_path(stored_name)
@@ -78,7 +95,7 @@ async def upload_attachment(
             original_name=(file.filename or stored_name)[:255],
             mime_type=MIME_BY_EXT[ext],
             size_bytes=len(content),
-            kind="image" if is_image else "document",
+            kind=kind,
         )
         db.add(attachment)
         await db.commit()

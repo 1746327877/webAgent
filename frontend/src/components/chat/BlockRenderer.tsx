@@ -56,6 +56,25 @@ export default function BlockRenderer({
       <MarkdownContent content={block.content ?? ""} maxRef={maxRef} onCitation={onCitation} />
     );
   }
+  if (block.type === "transcript") {
+    const ok = block.status === "ok";
+    const name = String(block.name ?? "音频");
+    return (
+      <details open className="my-1 rounded border px-3 py-2 text-sm">
+        <summary className="cursor-pointer select-none text-muted-foreground">
+          {ok ? "🎙️" : "⚠️"} 语音转写 · {name}
+          {!ok ? " · 失败" : ""}
+        </summary>
+        {ok ? (
+          <p className="mt-1 whitespace-pre-wrap">{String(block.text ?? "")}</p>
+        ) : (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {String(block.error ?? "转写失败")}
+          </p>
+        )}
+      </details>
+    );
+  }
   if (block.type === "tool_call") {
     const rawArgs = block.args;
     const argsText =

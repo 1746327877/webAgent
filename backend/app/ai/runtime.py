@@ -268,6 +268,53 @@ def _frame_attachment_data(document_notes: list[str]) -> str:
     )
 
 
+async def _transcribe_audio_files(
+    audio_files: list[tuple[str, str]],
+) -> tuple[list[dict], list[str]]:
+    """调 ASR MCP 转写音频附件，返回 (transcript 块, 注入文本片段)。
+
+    失败只产出提示，不影响本轮生成——与文档附件抽取同一降级口径。
+    """
+    from app.ai import asr
+
+    names = [name for _, name in audio_files]
+    try:
+        results = await asr.transcribe([path for path, _ in audio_files])
+    except Exception as exc:  # noqa: BLE001 —— 转写不可用时降级，不让对话直接失败
+        reason = str(exc)[:200]
+        logger.warning("语音转写失败 files=%s error=%s", names, reason)
+        return (
+            [
+                {"type": "transcript", "name": name, "text": "", "status": "error", "error": reason}
+                for name in names
+            ],
+            [f"【音频：{name}】转写不可用，已跳过该附件。" for name in names],
+        )
+
+    blocks: list[dict] = []
+    notes: list[str] = []
+    for index, (path, name) in enumerate(audio_files):
+        item = next((row for row in results if row.get("path") == path), None)
+        if item is None and index < len(results):
+            item = results[index]  # MCP 未回填 path 时按入参顺序兜底
+        item = item or {}
+        text = str(item.get("text") or "").strip()
+        if item.get("success") and text:
+            truncated = text[:MAX_DOCUMENT_CONTEXT_CHARS]
+            suffix = "（内容已截断）" if len(text) > MAX_DOCUMENT_CONTEXT_CHARS else ""
+            blocks.append(
+                {"type": "transcript", "name": name, "text": truncated, "status": "ok", "error": None}
+            )
+            notes.append(f"【音频转写：{name}{suffix}】\n{truncated}")
+            continue
+        error = str(item.get("error") or "转写失败")[:200]
+        blocks.append(
+            {"type": "transcript", "name": name, "text": "", "status": "error", "error": error}
+        )
+        notes.append(f"【音频：{name}】转写失败（{error}），已跳过该附件。")
+    return blocks, notes
+
+
 async def _document_context_notes(
     document_files: list[tuple[str, str, str]],
 ) -> list[str]:
@@ -385,6 +432,7 @@ async def run_generation(
     model_override: str | None = None,
     image_paths: list[str] | None = None,
     document_files: list[tuple[str, str, str]] | None = None,
+    audio_files: list[tuple[str, str]] | None = None,
     attachment_ids: list[uuid.UUID] | None = None,
     web_search: bool = False,
 ) -> AsyncIterator[str]:
@@ -396,6 +444,7 @@ async def run_generation(
     document_files 为 (落盘路径, 扩展名, 原始文件名) 列表，抽取文本后以 user 角色数据块
     （明确声明不是指令）注入，避免附件内容获得 system 级优先级；
     attachment_ids 在用户消息落库后回填 message_id。
+    audio_files 为 (落盘路径, 原始文件名) 列表，先经 ASR MCP 转写再以数据块注入（docs/设计/23）。
     web_search 开启时按需注入联网搜索 MCP 工具（部署级合成绑定，见 docs/设计/18）。
     """
     user = await db.get(User, session.user_id)
@@ -430,12 +479,17 @@ async def run_generation(
         # 无图时用户显式选择的模型覆盖智能体默认；未知模型由 ModelManager 加载失败路径报错
         cfg = replace(cfg, model=model_override)
     exclude_ids: set[uuid.UUID] = set()
+    # 音频附件先转写（在检索与建用户消息之前），失败按降级处理，不中断本轮生成
+    transcript_blocks: list[dict] = []
+    transcript_notes: list[str] = []
+    if audio_files and user_content is not None:
+        transcript_blocks, transcript_notes = await _transcribe_audio_files(audio_files)
     if user_content is not None:
         user_msg = Message(
             session_id=session.id,
             role="user",
             agent_id=cfg.agent_id,
-            blocks=[{"type": "text", "content": user_content}],
+            blocks=[{"type": "text", "content": user_content}, *transcript_blocks],
         )
         db.add(user_msg)
         # 独立事务提交：与 assistant 占位分开；历史排序以 seq 为准，不依赖 created_at
@@ -494,9 +548,9 @@ async def run_generation(
                     *(asyncio.to_thread(_encode_image, path) for path in image_paths)
                 )
             )
-        document_notes = (
-            await _document_context_notes(document_files) if document_files else []
-        )
+        document_notes = list(transcript_notes)
+        if document_files:
+            document_notes += await _document_context_notes(document_files)
         # 附件文本以 user 角色注入（优先级低于 system），并显式声明为数据而非指令
         attachment_context = _frame_attachment_data(document_notes) if document_notes else ""
         messages = (

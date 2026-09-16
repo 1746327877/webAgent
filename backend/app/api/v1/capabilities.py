@@ -99,3 +99,15 @@ async def get_ocr_status(user: Annotated[User, Depends(get_current_user)]):
         ocr.binding,
         unconfigured="未配置 OCR_MCP_URL，图片回合不挂 OCR 工具",
     )
+
+
+@router.get("/asr")
+async def get_asr_status(user: Annotated[User, Depends(get_current_user)]):
+    """语音转写 MCP 状态：未配置时音频附件不会转写（docs/设计/23）。"""
+    from app.ai import asr
+
+    return await _mcp_slot_status(
+        (settings.asr_mcp_url or "").strip(),
+        asr.binding,
+        unconfigured="未配置 ASR_MCP_URL，音频附件不会转写",
+    )

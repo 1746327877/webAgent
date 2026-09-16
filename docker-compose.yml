@@ -12,6 +12,8 @@ x-backend-env: &backend-env
   WEB_SEARCH_MCP_URL: ${WEB_SEARCH_MCP_URL:-http://web-search:3000/mcp}
   # OCR MCP（部署方自备服务）；留空则图片回合不挂 OCR 工具
   OCR_MCP_URL: ${OCR_MCP_URL:-}
+  # 语音转写 MCP（外部 ASR 服务，见 docs/设计/23）；留空则音频附件不转写
+  ASR_MCP_URL: ${ASR_MCP_URL:-}
 
 services:
   postgres:
