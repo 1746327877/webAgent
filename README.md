@@ -142,6 +142,25 @@ MINERU_BACKEND=pipeline                           # 纯 CPU；hybrid/vlm 需要 
 
 之后知识库上传 PDF/DOCX（含扫描件）走 MinerU；MinerU 不可用时自动回退内置解析并记 warning 日志。详见 `docs/设计/13-MinerU与联网搜索MCP.md`。
 
+### 语音转写（本地 MCP，faster-whisper）
+
+宿主机的本地 MCP 服务集合（`mcp_servers/`，结构与 `mcp_new` 一致：公共 config + 统一入口 + 每服务一个子包）。首次安装下载几百 MB 依赖；模型走本机 HuggingFace 缓存（离线可用）：
+
+```powershell
+.\scripts\start-mcp.ps1 -Install      # 首次：建 venv + 装依赖
+.\scripts\start-mcp.ps1               # 启动 mcp_voice2text（默认 large-v3，端口 10001）
+.\scripts\start-mcp.ps1 -Stop         # 停止全部
+```
+
+在 `.env` 启用（不设则音频附件不转写，对话其它功能不受影响）：
+
+```
+ASR_MCP_URL=http://host.docker.internal:10001/mcp   # Docker 模式
+ASR_INPUT_MODE=base64                               # 宿主机 MCP 读不到容器内路径
+```
+
+之后在对话框上传音频（mp3/wav/m4a/webm 等）即可自动转写：转写文本以「附件数据」身份注入对话，并在消息里显示为 🎙️ 块。有 N 卡时把 `mcp_servers/.env` 的 `WHISPER_DEVICE` 改成 `cuda`、`WHISPER_COMPUTE_TYPE` 改成 `float16` 可快一个数量级。详见 `docs/设计/23-语音转写MCP.md`。
+
 ## 演示数据
 
 ```powershell

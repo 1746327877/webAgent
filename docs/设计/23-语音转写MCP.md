@@ -24,7 +24,7 @@
 | 输入形态 | 默认 **base64**（`ASR_INPUT_MODE`）；共享卷时可用 `path` | 参考实现用 `storageKey`（对象存储），本项目没有；Whisper 为 3GB 模型跑在**宿主机**，读不到容器内路径，故把字节随请求发出 |
 | 失败降级 | 探测/调用失败 → 记 warning，注入"转写不可用"提示，**生成继续** | 与 MinerU 回退同一口径 |
 | 转写超时 | 单独用 `ASR_TIMEOUT_S`（默认 300s） | CPU 上 large-v3 单条语音数十秒，MCP 默认 15s 连接超时会把长任务掐死 |
-| ASR 引擎 | **仓库自带 MCP 服务 + 本地 faster-whisper**（`mcp_servers/voice_asr/`） | 本机已装 `faster-whisper-large-v3`（HF 缓存，离线可用）；参考项目的 MCP 是调远程 GPUStack 网关的，不适用 |
+| ASR 引擎 | **仓库自带 MCP 服务 + 本地 faster-whisper**（`mcp_servers/src/mcp_voice2text/`） | 本机已装 `faster-whisper-large-v3`（HF 缓存，离线可用）；参考项目的 MCP 是调远程 GPUStack 网关的，不适用 |
 | 转写文本优先级 | 与文档附件一致：以 **user 角色数据块**注入，并声明"不是指令" | 防提示注入 |
 | 结果落库 | 用户消息上追加 `{"type":"transcript", ...}` 块 | 前端可见，且历史可回看 |
 
@@ -38,7 +38,9 @@
 
 **可直接复用**：magic bytes 签名表（含 m4a/aac 的坑）、`OpenCC("t2s")` 繁转简、Whisper 调用与错误处理、批量并行与保序。
 
-**本项目不沿用它**：它是**远程 GPUStack 网关 + 对象存储**的组合；本机没有该网关，也没有对象存储。因此仓库自带一个等价的本地版 MCP（`mcp_servers/voice_asr/`，见 §23.4.2.1），入参改为 base64 / 本地路径。
+**本项目不沿用它**：它是**远程 GPUStack 网关 + 对象存储**的组合；本机没有该网关，也没有对象存储。因此仓库自带一个等价的本地版 MCP（`mcp_servers/`，见 §23.4.2.1），入参改为 base64 / 本地路径。
+
+`mcp_servers/` 的工程结构**照 `mcp_new/` 的约定**组织：`src/` 下公共 `config.py`/`logger.py` + 统一入口 `main.py` + 每个服务一个 `mcp_<名字>/` 子包（`server.py` 注册 / `*_tool.py` 业务 / `<引擎>.py` 客户端）。后续新增本地 MCP 只需加子包 + 在 `main.py` 的 `SERVICES` 登记一行。
 
 ## 23.4 设计
 
@@ -68,16 +70,22 @@
 - 返回项里若出现 `storage_key` 而非 `path`，也接受（对齐参考实现）；
 - base64 模式下 MCP 通常回填**文件名**而非容器路径，客户端按**入参顺序**兜底对齐。
 
-### 23.4.2.1 仓库自带的 MCP 服务（`mcp_servers/voice_asr/`）
+### 23.4.2.1 仓库自带的 MCP 服务（`mcp_servers/`）
+
+工程结构对齐参考项目 `mcp_new/`：公共配置 + 统一入口 + 每服务一个子包。
 
 | 文件 | 职责 |
 |---|---|
-| `asr_local.py` | faster-whisper 懒加载单例 + `vad_filter` 去静音 + 繁转简（`opencc` 可选）；`bytes` 统一包成 `BytesIO`——**faster-whisper 不接受裸 bytes**，会报 `no read() method` |
-| `server.py` | FastMCP `voice-asr`（streamable-http，`VOICE_PORT` 默认 10001）；工具 `transcribe(audios?, paths?)`、`health()`；`VOICE_MAX_PARALLEL` 控制并发（CPU 上 Whisper 很吃算力） |
-| `requirements.txt` | `fastmcp` / `faster-whisper` / `opencc-python-reimplemented` |
-| `scripts/start-voice-asr.ps1` | 一键建 venv + 装依赖 + 启动（`-Install` 只装不启，`-Model` 可切小模型先验链路） |
+| `src/config.py` | 公共配置（pydantic-settings + `mcp_servers/.env`）；新增配置只改这里 |
+| `src/logger.py` | 公共日志（统一格式，避免各自 `basicConfig`） |
+| `src/main.py` | 统一入口：按 `MCP_SERVICE` 从 `SERVICES` 白名单选服务启动；新增服务加一行 |
+| `src/mcp_voice2text/asr_local.py` | faster-whisper 懒加载单例 + `vad_filter` 去静音 + 繁转简（`opencc` 可选）；`bytes` 统一包成 `BytesIO`——**faster-whisper 不接受裸 bytes**，会报 `no read() method` |
+| `src/mcp_voice2text/voice_tool.py` | 工具层：批量转写、保持入参顺序、单文件失败隔离（可直接单测） |
+| `src/mcp_voice2text/server.py` | FastMCP `voice-asr`（streamable-http，端口取 `VOICE_PORT`）；工具 `transcribe(audios?, paths?)`、`health()` |
+| `requirements.txt` / `.env.example` / `README.md` | 依赖、环境变量样例、结构说明与"如何新增一个本地 MCP" |
+| `scripts/start-mcp.ps1` | 一键建 venv + 装依赖 + 启动（`-Install` 装、`-Service all` 全启、`-Stop` 停） |
 
-**实测（本机 CPU，8 秒中文语音，含模型加载）**：`large-v3` 32.9s → 识别为「线程池的核心参数包括核心线程数和最大线程数。」（完全正确）；`base` 24.4s。模型从本地 HF 缓存加载，**离线可用**。
+**实测（本机 CPU，8 秒中文语音，含模型加载）**：`large-v3` 32.9s → 识别为「线程池的核心参数包括核心线程数和最大线程数。」（完全正确）；`base` 24.4s。模型从本地 HF 缓存加载，**离线可用**。重构为 `mcp_new` 结构后复验仍逐字正确。
 
 ### 23.4.3 客户端（新增 `app/ai/asr.py`）
 
@@ -136,10 +144,12 @@ run_generation(audio_files=[(path, original_name), ...])
 Whisper large-v3 约 3GB，且本机无 CUDA（CPU 推理），因此 MCP 与模型都放宿主机：
 
 ```powershell
-.\scripts\start-voice-asr.ps1 -Install    # 首次：建 venv + 装依赖（几百 MB）
-.\scripts\start-voice-asr.ps1             # 启动，默认 large-v3 / CPU / int8
-.\scripts\start-voice-asr.ps1 -Model Systran/faster-whisper-base   # 先验链路更快
+.\scripts\start-mcp.ps1 -Install    # 首次：建 venv + 装依赖（几百 MB）
+.\scripts\start-mcp.ps1             # 启动 mcp_voice2text，默认 large-v3 / CPU / int8
+.\scripts\start-mcp.ps1 -Stop       # 停止
 ```
+
+> 换小模型先验链路：编辑 `mcp_servers/.env` 的 `WHISPER_MODEL=Systran/faster-whisper-base`。
 
 `.env`：
 
@@ -172,3 +182,4 @@ ASR_INPUT_MODE=base64                               # 宿主机读不到容器�
 - 转写单独用 `ASR_TIMEOUT_S`（默认 300s）：`mcp_service.call_tool` 的默认 15s 会掐死长转写。
 - 转写结果落 `transcript` 块并注入 user 数据块，与文档附件同一处理路径。
 - 端到端实测：上传 wav → `kind=audio` → MCP 返回正确中文 → 用户消息落 `transcript` 块（`status=ok`）。
+- `mcp_servers/` 的工程结构照参考项目 `mcp_new/` 组织（公共 `config`/`logger` + 统一入口 `main.py` + 每服务一个 `mcp_<名字>/` 子包），新增本地 MCP 只加子包 + 登记一行，配 `scripts/start-mcp.ps1` 一键启动。
