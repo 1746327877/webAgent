@@ -75,7 +75,9 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "8080:80"
+      # 宿主端口可配置：8080 常被 Steam（CEF 调试端口）/其他程序占用，
+      # 浏览器访问 localhost 时 IPv4 优先会落到那些进程上，故默认改用 8090
+      - "${FRONTEND_PORT:-8090}:80"
     depends_on:
       backend:
         condition: service_healthy

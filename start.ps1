@@ -10,7 +10,7 @@
     .\start.ps1 -Down        # stop and remove all containers, then exit
 
   Docker mode entry points:
-    web  http://localhost:8080
+    web  http://localhost:8090   (override with FRONTEND_PORT in .env)
     api  http://localhost:8000/docs
     login demo / Demo123456
 
@@ -28,6 +28,16 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location $root
+
+# Frontend host port: read FRONTEND_PORT from .env when present, else 8090
+# (8080 is commonly taken by Steam's CEF debug port / other apps).
+$frontendPort = 8090
+$envFile = Join-Path $root ".env"
+if (Test-Path $envFile) {
+  $match = Select-String -Path $envFile -Pattern '^\s*FRONTEND_PORT\s*=\s*(\d+)' | Select-Object -First 1
+  if ($match) { $frontendPort = [int]$match.Matches[0].Groups[1].Value }
+}
+$frontendUrl = "http://localhost:$frontendPort"
 
 function Info($m) { Write-Host "[start] $m" -ForegroundColor Cyan }
 function Ok($m) { Write-Host "[ ok  ] $m" -ForegroundColor Green }
@@ -145,14 +155,14 @@ Info "waiting for backend health (http://localhost:8000/health) ..."
 if (Wait-Http "http://localhost:8000/health" 180) { Ok "backend healthy" }
 else { Warn "backend health check timed out; run 'docker compose logs -f backend'" }
 
-Info "waiting for frontend (http://localhost:8080) ..."
-if (Wait-Http "http://localhost:8080" 120) { Ok "frontend ready" }
+Info "waiting for frontend ($frontendUrl) ..."
+if (Wait-Http $frontendUrl 120) { Ok "frontend ready" }
 else { Warn "frontend not responding yet; run 'docker compose logs -f frontend'" }
 
-if (-not $NoOpen) { Start-Process "http://localhost:8080" }
+if (-not $NoOpen) { Start-Process $frontendUrl }
 Write-Host ""
 Ok "up and running"
-Write-Host "  web    : http://localhost:8080"
+Write-Host "  web    : $frontendUrl"
 Write-Host "  api    : http://localhost:8000/docs"
 Write-Host "  login  : demo / Demo123456"
 Write-Host "  logs   : docker compose logs -f"

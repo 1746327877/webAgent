@@ -455,6 +455,7 @@ export default function ChatView() {
         ) : (
           <MessageList
             items={items}
+            sessionKey={sessionId ?? "new"}
             agentOf={messageAgent}
             isRelayOf={messageIsRelay}
             onOpenCitation={setOpenCitation}
