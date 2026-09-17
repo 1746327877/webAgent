@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     asr_mcp_tool: str = ""
     # 音频入参形态：base64（MCP 与平台不在同一文件系统，默认）| path（与平台共享 uploads 卷时）
     asr_input_mode: str = "base64"
+    # 是否在每轮自动转写并注入上下文。默认关闭：改为让模型按需调用内置工具 transcribe_audio，
+    # 避免把整份转写塞进上下文（弱模型/显存吃紧时更友好）。设 true 恢复自动注入。
+    asr_auto_transcribe: bool = False
     # 转写是重活（CPU 跑 large-v3 可能数十秒到数分钟），单独给长超时
     asr_timeout_s: float = 300.0
     # 单个音频附件大小上限（默认 20MB，与文档一致）

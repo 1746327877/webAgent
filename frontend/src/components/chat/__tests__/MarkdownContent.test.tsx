@@ -40,6 +40,9 @@ test("markdown 表格渲染出表头与单元格，并包在可横向滚动的�
   expect(headers.map((h) => h.textContent)).toEqual(["事项", "责任人"]);
   const cells = screen.getAllByRole("cell");
   expect(cells.map((c) => c.textContent)).toEqual(["发布", "张三"]);
+  // 列之间要有分隔线，否则多列内容会糊在一起
+  expect(cells[0]).toHaveClass("border-r");
+  expect(cells[1]).toHaveClass("last:border-r-0");
   // 宽表要能横向滚动，否则会把气泡撑破
   expect(screen.getByRole("table").parentElement).toHaveClass("overflow-x-auto");
 });

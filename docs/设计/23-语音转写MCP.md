@@ -20,7 +20,7 @@
 | 事项 | 决策 | 理由 |
 |---|---|---|
 | ASR 形态 | 封装成 **MCP 服务**，平台作为 **MCP 客户端**调用 | 与 `13`/`20` 一致：ASR 模型独立部署，不塞进 `ModelManager`（单槽位 LLM 管理器，会抢显存、加生命周期负担） |
-| **谁调用** | **平台**（`runtime` 在生成前确定性调用），**不把该工具暴露给模型** | 音频是二进制，无法经 function-call 参数传给模型；让模型拿到路径再"决定要不要转写"只会多一次往返且可能传错参。转写的产物是**文本**，模型只需要文本 |
+| **谁调用** | 默认**模型调用内置工具 `transcribe_audio`**；平台在 runtime 层拦截并解析本轮附件。设 `ASR_AUTO_TRANSCRIBE=true` 可恢复"每轮自动转写并注入" | 自动注入会把**整份转写常驻上下文**，对弱模型/显存吃紧不友好；而模型直接调宿主机 MCP 又拿不到可读路径。内置工具让"模型按需调用"和"平台解析附件"两全 |
 | 输入形态 | 默认 **base64**（`ASR_INPUT_MODE`）；共享卷时可用 `path` | 参考实现用 `storageKey`（对象存储），本项目没有；Whisper 为 3GB 模型跑在**宿主机**，读不到容器内路径，故把字节随请求发出 |
 | 失败降级 | 探测/调用失败 → 记 warning，注入"转写不可用"提示，**生成继续** | 与 MinerU 回退同一口径 |
 | 转写超时 | 单独用 `ASR_TIMEOUT_S`（默认 300s） | CPU 上 large-v3 单条语音数十秒，MCP 默认 15s 连接超时会把长任务掐死 |
@@ -113,15 +113,20 @@ def reset_cache() -> None
 ```
 post_message: 附件按 kind 分三路 → image_paths / document_files / audio_files
 run_generation(audio_files=[(path, original_name), ...])
-  └─ 在创建用户消息之前：transcribe(paths)
-       ├─ 成功 → transcript 块 + 注入文本
-       └─ 失败 → 错误提示块 + "转写不可用"文本（生成继续）
-  └─ 用户消息 blocks = [text, *transcript_blocks]
-  └─ 注入文本 = 转写文本 + 文档文本（统一走 _frame_attachment_data）
+  ├─ 默认（工具优先，ASR_AUTO_TRANSCRIBE=false）
+  │    └─ 只注入一行提示：「【音频附件：xx.mp3】如需其中内容，请调用 transcribe_audio 工具转写。」
+  └─ 自动模式（ASR_AUTO_TRANSCRIBE=true）
+       └─ 生成前逐条转写 → transcript 块 + 注入全文（失败降级为提示）
 ```
 
-- 转写**在检索之前**完成，因此知识库检索也能基于音频内容。
-- 转写文本同样受 `MAX_DOCUMENT_CONTEXT_CHARS` 截断约束。
+**内置工具 `transcribe_audio`**（`app/ai/tools/builtins.py` 注册，runtime 拦截）：
+
+- 参数 `name` 可选：只转写文件名包含它的音频，留空转写本轮全部；
+- 拦截时用**本轮的 `audio_files`** 调 ASR（模型不需要、也拿不到文件路径）；
+- 返回 `【音频转写：xx.mp3】正文…`；失败返回可读错误，不中断生成；
+- 在智能体编辑器「扩展能力 → Tool」里勾选后模型才可见（不勾就等于没有该能力）。
+
+两条路径都只依赖"平台能读到附件"这一点，避免模型传路径。
 
 ### 23.4.6 前端
 
@@ -167,7 +172,7 @@ ASR_INPUT_MODE=base64                               # 宿主机读不到容器�
 ## 23.7 已知限制
 
 - **不把 ASR 工具暴露给模型**：模型无法对"对话里出现的其它音频"（URL、工具产出文件）按需转写；需要时再补一个可被模型调用的工具。
-- **不要把本 MCP 绑给智能体/模型**（最常见的误用）：模型看到的只是附件的**文件名**（如 `test.wav`），会把文件名当路径传进来，而宿主机 MCP 读不到平台的上传目录 → 报错白跑一轮。平台上传的音频**已自动转写**，无需再绑。工具描述与错误信息里都写明了这一点；错误按原因区分（"是文件名不是路径" / "缺少 data_base64" / "读不到文件"）。
+- **不要把本 MCP 绑给智能体/模型**（最常见的误用）：模型看到的只是附件的**文件名**（如 `test.wav`），会把文件名当路径传进来，而宿主机 MCP 读不到平台的上传目录 → 报错白跑一轮。**想让模型按需转写，用内置工具 `transcribe_audio`**（见 §23.4.5），它由平台解析附件。工具描述与错误信息里都写明了这一点；错误按原因区分（"是文件名不是路径" / "缺少 data_base64" / "读不到文件"）。
 - **base64 有约 33% 传输开销**：20MB 上限对应约 27MB 请求体；语音消息通常远小于此，但超长录音不适合。
 - **CPU 推理慢**：本机无 CUDA，`large-v3` 约 4x 实时（8 秒语音 ~33 秒）。长音频体验差；有 GPU 时把 `WHISPER_DEVICE=cuda` + `WHISPER_COMPUTE_TYPE=float16` 即可。
 - **模型是进程内单例**：多开 MCP 进程会各加载一份 3GB；生产建议单实例 + 队列。
@@ -183,4 +188,5 @@ ASR_INPUT_MODE=base64                               # 宿主机读不到容器�
 - 转写单独用 `ASR_TIMEOUT_S`（默认 300s）：`mcp_service.call_tool` 的默认 15s 会掐死长转写。
 - 转写结果落 `transcript` 块并注入 user 数据块，与文档附件同一处理路径。
 - 端到端实测：上传 wav → `kind=audio` → MCP 返回正确中文 → 用户消息落 `transcript` 块（`status=ok`）。
+- **改为工具优先**（用户反馈）：自动注入会把整份转写常驻上下文，弱模型/显存吃紧时负担重。默认 `ASR_AUTO_TRANSCRIBE=false`，只注入一行附件提示，由模型调用内置工具 `transcribe_audio` 按需转写；想要旧行为把它设成 `true`。
 - `mcp_servers/` 的工程结构照参考项目 `mcp_new/` 组织（公共 `config`/`logger` + 统一入口 `main.py` + 每服务一个 `mcp_<名字>/` 子包），新增本地 MCP 只加子包 + 登记一行，配 `scripts/start-mcp.ps1` 一键启动。

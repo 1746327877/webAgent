@@ -25,3 +25,18 @@ async def time_now() -> str:
 )
 async def kb_search(query: str, top_k: int = 5) -> str:
     return "未绑定知识库或检索不可用，请直接基于已有知识回答。"
+
+
+@tool(
+    "transcribe_audio",
+    "语音转写",
+    "把用户上传的音频附件转写成文字（平台负责读取附件并调用 ASR 服务）",
+    category="media",
+    is_system=True,
+)
+async def transcribe_audio(name: str = "") -> str:
+    """真实的转写在 runtime 层拦截（只有平台拿得到本轮附件）。
+
+    `name` 可选：只转写文件名包含它的那个音频；留空转写本轮全部音频。
+    """
+    return "本轮没有可转写的音频附件。"

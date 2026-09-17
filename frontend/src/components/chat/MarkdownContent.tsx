@@ -189,13 +189,19 @@ export default function MarkdownContent({
     th: ({ node: _node, ...props }: ComponentPropsWithoutRef<"th"> & ExtraProps) => (
       <th
         {...props}
-        className={cn("border-b bg-muted/50 px-2 py-1 text-left font-medium", props.className)}
+        className={cn(
+          "border-b border-r border-border/60 bg-muted/50 px-2 py-1 text-left font-medium last:border-r-0",
+          props.className,
+        )}
       />
     ),
     td: ({ node: _node, ...props }: ComponentPropsWithoutRef<"td"> & ExtraProps) => (
       <td
         {...props}
-        className={cn("border-b border-border/60 px-2 py-1 align-top", props.className)}
+        className={cn(
+          "border-b border-r border-border/60 px-2 py-1 align-top last:border-r-0",
+          props.className,
+        )}
       />
     ),
   };
