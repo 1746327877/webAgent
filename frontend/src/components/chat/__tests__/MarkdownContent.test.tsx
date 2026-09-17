@@ -30,6 +30,20 @@ test("行内代码里的普通文本仍是代码", async () => {
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
 
+test("markdown 表格渲染出表头与单元格，并包在可横向滚动的容器里", async () => {
+  render(
+    <MarkdownContent
+      content={"| 事项 | 责任人 |\n| --- | --- |\n| 发布 | 张三 |"}
+    />,
+  );
+  const headers = await screen.findAllByRole("columnheader");
+  expect(headers.map((h) => h.textContent)).toEqual(["事项", "责任人"]);
+  const cells = screen.getAllByRole("cell");
+  expect(cells.map((c) => c.textContent)).toEqual(["发布", "张三"]);
+  // 宽表要能横向滚动，否则会把气泡撑破
+  expect(screen.getByRole("table").parentElement).toHaveClass("overflow-x-auto");
+});
+
 test("多行代码块里的 URL 不会被链接化", async () => {
   render(<MarkdownContent content={"```bash\ncurl weixin://wxpay?pr=abc\n```"} />);
   await screen.findByText("复制");

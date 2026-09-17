@@ -63,6 +63,9 @@ export default function MessageItem({
   if (message.role === "user") {
     const text = message.blocks.find((b) => b.type === "text")?.content ?? "";
     const attachments = message.attachments ?? [];
+    // 用户消息也可能带非文本块（如音频附件转写出的 transcript）：必须一起渲染，
+    // 否则转写内容在界面上完全看不到（只能在 API 里看到）
+    const extraBlocks = message.blocks.filter((b) => b.type !== "text");
     return (
       <div className="flex flex-col items-end gap-1">
         {attachments.length > 0 && (
@@ -79,6 +82,13 @@ export default function MessageItem({
         <span className="max-w-[80%] rounded-lg bg-primary px-3 py-2 text-primary-foreground">
           {text}
         </span>
+        {extraBlocks.length > 0 && (
+          <div className="w-full max-w-[80%] text-left">
+            {extraBlocks.map((b, i) => (
+              <BlockRenderer key={i} block={b} />
+            ))}
+          </div>
+        )}
         {actions}
       </div>
     );

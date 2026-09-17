@@ -176,6 +176,48 @@ test("历史消息引用块没有 headings 时不渲染章节分隔符", () => {
   expect(screen.queryByText(/›/)).not.toBeInTheDocument();
 });
 
+test("用户消息显示附件名称，并渲染音频转写块", () => {
+  render(
+    <MessageItem
+      message={makeMessage({
+        role: "user",
+        blocks: [
+          { type: "text", content: "把这段语音转成文字" },
+          { type: "transcript", name: "voice.wav", text: "线程池的核心参数", status: "ok" },
+        ],
+        attachments: [{ id: "a1", original_name: "voice.wav", kind: "audio", size_bytes: 100 }],
+      })}
+    />,
+  );
+  // 附件名以 chip 显示（音频走文档 chip 分支）
+  expect(screen.getByText("voice.wav")).toBeInTheDocument();
+  // 转写块此前在用户消息里完全没有渲染，这里必须可见
+  expect(screen.getByText(/线程池的核心参数/)).toBeInTheDocument();
+  expect(screen.getByText(/语音转写/)).toBeInTheDocument();
+});
+
+test("音频转写失败的块显示失败原因", () => {
+  render(
+    <MessageItem
+      message={makeMessage({
+        role: "user",
+        blocks: [
+          { type: "text", content: "转写一下" },
+          {
+            type: "transcript",
+            name: "test.wav",
+            text: "",
+            status: "error",
+            error: "语音转写 MCP 不可用",
+          },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByText(/语音转写 · test\.wav · 失败/)).toBeInTheDocument();
+  expect(screen.getByText("语音转写 MCP 不可用")).toBeInTheDocument();
+});
+
 test("回复正文里已经写出的图片不重复展示", () => {
   const url = "https://a.com/q.png";
   render(

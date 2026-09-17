@@ -41,7 +41,10 @@ function messageText(message: MessageItemData): string {
 }
 
 /** 发送瞬间本地构造的用户消息：真实消息回填前先展示，避免"等模型答完才看到自己说的话"。 */
-function optimisticUserMessage(text: string): MessageItemData {
+function optimisticUserMessage(
+  text: string,
+  attachments: MessageItemData["attachments"] = [],
+): MessageItemData {
   return {
     id: `pending-${Date.now()}`,
     role: "user",
@@ -50,6 +53,8 @@ function optimisticUserMessage(text: string): MessageItemData {
     rating: null,
     error: null,
     created_at: new Date().toISOString(),
+    // 带上附件才能在发送瞬间就显示文件名 chip（否则要等流结束重拉消息才出现）
+    attachments,
   };
 }
 
@@ -276,7 +281,13 @@ export default function ChatView() {
         return;
       }
     }
-    setPendingUser({ session: target, message: optimisticUserMessage(text) });
+    setPendingUser({
+      session: target,
+      message: optimisticUserMessage(
+        text,
+        attachments.map((a) => ({ id: a.id, original_name: a.name ?? "附件", kind: a.kind })),
+      ),
+    });
     await runStream(
       `/api/v1/sessions/${target}/messages`,
       {

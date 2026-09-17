@@ -179,6 +179,25 @@ export default function MarkdownContent({
       }
       return <a {...props} />;
     },
+    // 表格：项目没有引入排版插件（`prose` 是空类），不显式给样式就会渲染成
+    // 无边框、挤在一起的裸 table。这里补边框 + 表头底色 + 横向滚动。
+    table: ({ node: _node, ...props }: ComponentPropsWithoutRef<"table"> & ExtraProps) => (
+      <div className="my-2 overflow-x-auto rounded-md border">
+        <table {...props} className={cn("w-full border-collapse text-sm", props.className)} />
+      </div>
+    ),
+    th: ({ node: _node, ...props }: ComponentPropsWithoutRef<"th"> & ExtraProps) => (
+      <th
+        {...props}
+        className={cn("border-b bg-muted/50 px-2 py-1 text-left font-medium", props.className)}
+      />
+    ),
+    td: ({ node: _node, ...props }: ComponentPropsWithoutRef<"td"> & ExtraProps) => (
+      <td
+        {...props}
+        className={cn("border-b border-border/60 px-2 py-1 align-top", props.className)}
+      />
+    ),
   };
   return (
     <div className="prose prose-sm max-w-none dark:prose-invert">
