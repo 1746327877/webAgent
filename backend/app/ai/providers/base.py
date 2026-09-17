@@ -14,6 +14,9 @@ class ChatRequest:
     max_tokens: int = 2048
     num_ctx: int = 8192
     keep_alive: str = "15m"
+    # 三态：None=不下发（用模型默认）／True=开启深度思考／False=关闭。
+    # 非思考模型不接受该参数，因此只在调用方明确指定时才下发（见 ollama.chat_stream）。
+    think: bool | None = None
 
 
 EventType = Literal["token", "thinking", "tool_call", "usage"]

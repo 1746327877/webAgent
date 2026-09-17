@@ -479,6 +479,7 @@ async def run_generation(
     audio_files: list[tuple[str, str]] | None = None,
     attachment_ids: list[uuid.UUID] | None = None,
     web_search: bool = False,
+    thinking: bool | None = None,
 ) -> AsyncIterator[str]:
     """user_content=None 时仅生成助手消息（重新生成/接力场景）。
 
@@ -491,6 +492,7 @@ async def run_generation(
     audio_files 为 (落盘路径, 原始文件名) 列表：默认只提示存在音频附件，由模型按需调用
     `transcribe_audio` 工具转写；设 `ASR_AUTO_TRANSCRIBE=true` 则每轮自动转写并注入（docs/设计/23）。
     web_search 开启时按需注入联网搜索 MCP 工具（部署级合成绑定，见 docs/设计/18）。
+    thinking 为深度思考开关（三态）：None 不改动，True/False 显式开关；仅前端确认模型支持时才传。
     """
     user = await db.get(User, session.user_id)
     user_name = user.username if user else ""
@@ -753,6 +755,7 @@ async def run_generation(
                 top_p=cfg.top_p,
                 max_tokens=cfg.max_tokens,
                 num_ctx=cfg.num_ctx,
+                think=thinking,
             )
             tool_calls: list[dict] = []
             round_started_mono = time.monotonic()

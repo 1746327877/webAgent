@@ -196,6 +196,20 @@ test("用户消息显示附件名称，并渲染音频转写块", () => {
   expect(screen.getByText(/语音转写/)).toBeInTheDocument();
 });
 
+test("折叠框按内容宽度，不铺满整行", () => {
+  render(
+    <MessageItem
+      message={makeMessage({
+        role: "assistant",
+        blocks: [{ type: "thinking", content: "想一下" }],
+      })}
+    />,
+  );
+  const details = screen.getByText("思考过程").closest("details");
+  expect(details).toHaveClass("w-fit");
+  expect(details).toHaveClass("max-w-full");
+});
+
 test("音频转写失败的块显示失败原因", () => {
   render(
     <MessageItem

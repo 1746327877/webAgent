@@ -144,3 +144,10 @@ test("空会话不显示「跳到最新」", () => {
   });
   expect(screen.queryByRole("button", { name: "跳到最新" })).not.toBeInTheDocument();
 });
+
+test("消息列居中收窄且纵向更紧凑", () => {
+  renderList([makeMessage("m1", "一")]);
+  const wrapper = screen.getByText("一").closest("div.mx-auto");
+  expect(wrapper).toHaveClass("max-w-3xl");
+  expect(wrapper).toHaveClass("py-1.5");
+});

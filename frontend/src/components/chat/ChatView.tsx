@@ -74,6 +74,8 @@ export default function ChatView() {
   const setModelOverride = useComposerStore((s) => s.setModelOverride);
   const webSearch = useComposerStore((s) => s.webSearch);
   const setWebSearch = useComposerStore((s) => s.setWebSearch);
+  const thinking = useComposerStore((s) => s.thinking);
+  const setThinking = useComposerStore((s) => s.setThinking);
   // 会话产物（导出纪要等）：面板开关 + 导出动作
   const [artifactsOpen, setArtifactsOpen] = useState(false);
   const exportMarkdown = useExportMarkdown(sessionId);
@@ -85,6 +87,14 @@ export default function ChatView() {
     return typeof m === "string" && m ? m : null;
   };
   const defaultModelLabel = defaultModel(agent) ?? defaultModel(agents[0]) ?? "默认模型";
+  // 深度思考是否可用，取决于"当前实际使用的模型"是否具备 thinking 能力
+  // （Ollama 对不支持的模型会拒绝 think 参数，因此不支持时前端置灰、且不上报该字段）
+  const currentModelName =
+    modelOverride ?? defaultModel(agent) ?? defaultModel(agents[0]) ?? "";
+  const thinkingAvailable = Boolean(
+    currentModelName &&
+      models.find((m) => m.name === currentModelName)?.capabilities?.includes("thinking"),
+  );
   const agentById = new Map(agents.map((a) => [a.id, a]));
   // 提及下拉/消息徽标只需要头像与名字，避免整份 AgentItem 透传
   const agentBadges = agents.map(toAgentBadge);
@@ -303,6 +313,8 @@ export default function ChatView() {
         ...(modelOverride ? { model_override: modelOverride } : {}),
         // 联网搜索为对话级开关：仅在开启时上报
         ...(webSearch ? { web_search: true } : {}),
+        // 深度思考：只有模型支持时才上报（false 也要报，才能真正关掉默认开启的思考）
+        ...(thinkingAvailable ? { thinking } : {}),
       },
       target,
       "发送失败",
@@ -403,6 +415,9 @@ export default function ChatView() {
               webSearch={webSearch}
               onWebSearchChange={setWebSearch}
               webSearchAvailable={webSearchAvailable}
+              thinking={thinking}
+              onThinkingChange={setThinking}
+              thinkingAvailable={thinkingAvailable}
             />
           </div>
           <p className="text-xs text-muted-foreground">
@@ -577,6 +592,9 @@ export default function ChatView() {
           webSearch={webSearch}
           onWebSearchChange={setWebSearch}
           webSearchAvailable={webSearchAvailable}
+          thinking={thinking}
+          onThinkingChange={setThinking}
+          thinkingAvailable={thinkingAvailable}
         />
       </div>
       {sessionId && artifactsOpen && (

@@ -27,7 +27,7 @@ vi.mock("react-virtuoso", () => ({
 const mockState = vi.hoisted(() => ({
   messages: [] as MessageItemData[],
   agents: [] as { id: string; name: string; emoji: string }[],
-  models: [] as { name: string; size_mb: number | null }[],
+  models: [] as { name: string; size_mb: number | null; capabilities?: string[] }[],
   session: { id: "s1", agent_id: "a1", title: "并发问题排查" } as {
     id: string;
     agent_id: string | null;
@@ -193,7 +193,7 @@ beforeEach(() => {
   mockState.lastBody = null;
   mockState.tokens = [];
   mockState.createCalls = 0;
-  useComposerStore.setState({ modelOverride: null, webSearch: false });
+  useComposerStore.setState({ modelOverride: null, webSearch: false, thinking: false });
 });
 
 afterEach(() => {
@@ -318,6 +318,24 @@ test("开启联网搜索后请求体带 web_search", async () => {
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "搜一下{Enter}");
   await waitFor(() => expect(mockState.lastBody).not.toBeNull());
   expect(mockState.lastBody).toMatchObject({ content: "搜一下", web_search: true });
+});
+
+test("模型支持深度思考时请求体带 thinking（默认 false，即关掉默认开启的思考）", async () => {
+  useComposerStore.setState({ modelOverride: "think-model" });
+  mockState.models = [{ name: "think-model", size_mb: null, capabilities: ["thinking"] }];
+  renderAtRoot();
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "你好{Enter}");
+  await waitFor(() => expect(mockState.lastBody).not.toBeNull());
+  expect(mockState.lastBody).toMatchObject({ thinking: false });
+});
+
+test("模型不支持深度思考时不上报 thinking", async () => {
+  useComposerStore.setState({ modelOverride: "plain-model" });
+  mockState.models = [{ name: "plain-model", size_mb: null, capabilities: ["completion"] }];
+  renderAtRoot();
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "你好{Enter}");
+  await waitFor(() => expect(mockState.lastBody).not.toBeNull());
+  expect(mockState.lastBody).not.toHaveProperty("thinking");
 });
 
 test("落地态拖入多个附件只创建一个会话并逐个上传", async () => {

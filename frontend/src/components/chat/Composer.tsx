@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Globe, Paperclip, Square } from "lucide-react";
+import { ArrowUp, Brain, Globe, Paperclip, Square } from "lucide-react";
 import AgentAvatar from "@/components/agents/AgentAvatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -48,6 +48,11 @@ interface Props {
   onWebSearchChange?: (enabled: boolean) => void;
   /** 后端是否配置了联网搜索 MCP；未配置时按钮禁用 */
   webSearchAvailable?: boolean;
+  /** 后续消息是否开启深度思考 */
+  thinking?: boolean;
+  onThinkingChange?: (enabled: boolean) => void;
+  /** 当前模型是否支持深度思考；不支持时按钮置灰 */
+  thinkingAvailable?: boolean;
 }
 
 const MENTION_TAIL = /@([^\s@]*)$/;
@@ -87,6 +92,9 @@ export default function Composer({
   webSearch = false,
   onWebSearchChange,
   webSearchAvailable = false,
+  thinking = false,
+  onThinkingChange,
+  thinkingAvailable = false,
 }: Props) {
   const [input, setInput] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -351,6 +359,22 @@ export default function Composer({
             defaultLabel={defaultModelLabel}
             onChange={(model) => onModelChange?.(model)}
           />
+          <Button
+            type="button"
+            variant={thinking ? "default" : "outline"}
+            size="icon"
+            aria-label="深度思考"
+            aria-pressed={thinking}
+            title={
+              thinkingAvailable
+                ? "深度思考（对随后发送的消息生效）"
+                : "当前模型不支持深度思考"
+            }
+            disabled={!thinkingAvailable}
+            onClick={() => onThinkingChange?.(!thinking)}
+          >
+            <Brain />
+          </Button>
           <Button
             type="button"
             variant={webSearch ? "default" : "outline"}

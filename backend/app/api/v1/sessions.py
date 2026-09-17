@@ -116,6 +116,9 @@ class MessageIn(BaseModel):
     attachment_ids: list[uuid.UUID] = Field(default_factory=list, max_length=3)
     model_override: str | None = Field(default=None, max_length=64)
     web_search: bool = False
+    # 深度思考：None=不改动（模型默认）／True=开启／False=关闭。
+    # 前端只在所选模型支持 thinking 时才上报，避免非思考模型收到未知参数报错。
+    thinking: bool | None = None
 
     @field_validator("model_override")
     @classmethod
@@ -223,6 +226,7 @@ async def post_message(
             model_manager=manager,
             model_override=body.model_override,
             web_search=body.web_search,
+            thinking=body.thinking,
             image_paths=image_paths or None,
             document_files=document_files or None,
             audio_files=audio_files or None,

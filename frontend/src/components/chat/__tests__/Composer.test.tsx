@@ -30,6 +30,32 @@ test("联网搜索按钮未配置时禁用", () => {
   expect(screen.getByRole("button", { name: "联网搜索" })).toBeDisabled();
 });
 
+test("深度思考按钮：不支持时置灰，支持时切换回调携带目标状态", async () => {
+  const { rerender } = render(
+    <Composer
+      onSend={vi.fn()}
+      onStop={vi.fn()}
+      generating={false}
+      thinkingAvailable={false}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "深度思考" })).toBeDisabled();
+
+  const onChange = vi.fn();
+  rerender(
+    <Composer
+      onSend={vi.fn()}
+      onStop={vi.fn()}
+      generating={false}
+      thinkingAvailable
+      thinking={false}
+      onThinkingChange={onChange}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "深度思考" }));
+  expect(onChange).toHaveBeenCalledWith(true);
+});
+
 test("联网搜索按钮切换回调携带目标状态", async () => {
   const onChange = vi.fn();
   render(

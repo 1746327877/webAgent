@@ -30,6 +30,17 @@ test("行内代码里的普通文本仍是代码", async () => {
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
 
+test("有序/无序列表补回序号与缩进（Tailwind preflight 会清掉默认样式）", async () => {
+  render(<MarkdownContent content={"1. 第一项\n2. 第二项\n\n- 甲\n- 乙"} />);
+  const [ordered, unordered] = await screen.findAllByRole("list");
+  expect(ordered.tagName).toBe("OL");
+  expect(ordered).toHaveClass("list-decimal");
+  expect(ordered).toHaveClass("pl-6");
+  expect(unordered.tagName).toBe("UL");
+  expect(unordered).toHaveClass("list-disc");
+  expect(screen.getAllByRole("listitem")).toHaveLength(4);
+});
+
 test("markdown 表格渲染出表头与单元格，并包在可横向滚动的容器里", async () => {
   render(
     <MarkdownContent

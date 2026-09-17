@@ -206,6 +206,17 @@ export default function MarkdownContent({
         )}
       />
     ),
+    // 列表：Tailwind preflight 把 ol/ul 的 list-style 与缩进清掉了，
+    // 不补回来时"1. xxx / 2. xxx"会看不到序号、且多项挤在一起
+    ol: ({ node: _node, ...props }: ComponentPropsWithoutRef<"ol"> & ExtraProps) => (
+      <ol {...props} className={cn("my-1 list-decimal space-y-0.5 pl-6", props.className)} />
+    ),
+    ul: ({ node: _node, ...props }: ComponentPropsWithoutRef<"ul"> & ExtraProps) => (
+      <ul {...props} className={cn("my-1 list-disc space-y-0.5 pl-6", props.className)} />
+    ),
+    li: ({ node: _node, ...props }: ComponentPropsWithoutRef<"li"> & ExtraProps) => (
+      <li {...props} className={cn("leading-relaxed", props.className)} />
+    ),
   };
   return (
     <div className="prose prose-sm max-w-none dark:prose-invert">

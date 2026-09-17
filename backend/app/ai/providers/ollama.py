@@ -104,6 +104,10 @@ class OllamaProvider(ModelProvider):
         }
         if req.tools:
             payload["tools"] = req.tools
+        if req.think is not None:
+            # 深度思考开关：只有调用方明确指定时才下发。非思考模型收到该参数会报错，
+            # 因此"模型是否支持"由前端按 capabilities 判断，不由这里兜底。
+            payload["think"] = req.think
 
         parser = _ThinkTagParser()
         async with self._client.stream("POST", "/api/chat", json=payload, timeout=None) as resp:

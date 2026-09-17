@@ -33,7 +33,7 @@ export default function BlockRenderer({
       <details
         open={thinkingOpen}
         onToggle={(e) => setThinkingOpen(e.currentTarget.open)}
-        className="mb-1 rounded border px-3 py-2 text-sm text-muted-foreground"
+        className="mb-1 w-fit max-w-full rounded border px-3 py-2 text-sm text-muted-foreground"
       >
         <summary className="cursor-pointer select-none">
           {streaming ? (
@@ -60,7 +60,7 @@ export default function BlockRenderer({
     const ok = block.status === "ok";
     const name = String(block.name ?? "音频");
     return (
-      <details open className="my-1 rounded border px-3 py-2 text-sm">
+      <details open className="my-1 w-fit max-w-full rounded border px-3 py-2 text-sm">
         <summary className="cursor-pointer select-none text-muted-foreground">
           {ok ? "🎙️" : "⚠️"} 语音转写 · {name}
           {!ok ? " · 失败" : ""}
@@ -90,7 +90,7 @@ export default function BlockRenderer({
     const ok = block.status === "ok";
     const links = asLinkUrls(block.links);
     return (
-      <details className="my-1 rounded border px-3 py-2 text-xs">
+      <details className="my-1 w-fit max-w-full rounded border px-3 py-2 text-xs">
         <summary className="cursor-pointer text-muted-foreground">
           {ok ? "✅" : "⚠️"} {block.tool ? `${String(block.tool)} · ` : ""}
           {String(block.elapsed_ms ?? "")}ms
