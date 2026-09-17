@@ -196,6 +196,22 @@ test("用户消息显示附件名称，并渲染音频转写块", () => {
   expect(screen.getByText(/语音转写/)).toBeInTheDocument();
 });
 
+test("工具调用气泡按内容宽度，不铺满整行", () => {
+  render(
+    <MessageItem
+      message={makeMessage({
+        role: "assistant",
+        blocks: [
+          { type: "tool_call", id: "c1", tool: "kb_search", args: { query: "x" } },
+        ],
+      })}
+    />,
+  );
+  const bubble = screen.getByText(/调用工具/).closest("div");
+  expect(bubble).toHaveClass("w-fit");
+  expect(bubble).toHaveClass("max-w-full");
+});
+
 test("折叠框按内容宽度，不铺满整行", () => {
   render(
     <MessageItem

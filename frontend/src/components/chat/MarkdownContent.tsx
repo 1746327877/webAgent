@@ -110,6 +110,44 @@ function PreBlock({ children, node: _node, ...props }: ComponentPropsWithoutRef<
 
 const CITATION_PREFIX = "#cite-";
 
+/** GFM 分隔行的单元格，如 `---` / `:--:` */
+const DELIMITER_CELL_RE = /^:?-+:?$/;
+
+function isDelimiterRow(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.includes("|")) return false;
+  const cells = trimmed.replace(/^\|/, "").replace(/\|$/, "").split("|");
+  return cells.length > 0 && cells.every((cell) => DELIMITER_CELL_RE.test(cell.trim()));
+}
+
+/**
+ * 模型常把表格紧跟在说明文字后面写（`待办：| 事项 | 责任人 |`），
+ * 而 GFM 要求**表头必须单独成行**，否则整段会原样输出成纯文本。
+ * 这里在渲染前把它们拆开。
+ *
+ * 只在「下一行是分隔行」时才动，避免误伤正文里的竖线（如 `A | B`）。
+ */
+export function normalizeTables(markdown: string): string {
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const next = lines[index + 1];
+    if (next !== undefined && isDelimiterRow(next) && line.includes("|")) {
+      const cut = line.indexOf("|");
+      const head = cut > 0 ? line.slice(0, cut).trimEnd() : "";
+      if (head) out.push(head);
+      out.push(cut > 0 ? line.slice(cut).trim() : line);
+      const nextCut = next.indexOf("|");
+      out.push(nextCut > 0 ? next.slice(nextCut).trim() : next);
+      index += 1;
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 /**
  * react-markdown 默认只放行 `https?|ircs?|mailto|xmpp`，会把 `weixin://` 这类支付链接
  * 的 href 清成空字符串（表现为「点了没反应」）。白名单内的协议原样保留，其余仍交给默认清理。
@@ -226,7 +264,7 @@ export default function MarkdownContent({
         components={components}
         urlTransform={keepClickableSchemes}
       >
-        {autolinkBareUrls(linkifyCitations(content, maxRef))}
+        {autolinkBareUrls(linkifyCitations(normalizeTables(content), maxRef))}
       </Markdown>
     </div>
   );

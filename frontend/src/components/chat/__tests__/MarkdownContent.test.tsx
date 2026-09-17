@@ -30,6 +30,28 @@ test("行内代码里的普通文本仍是代码", async () => {
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
 
+test("模型把表头写在说明文字同一行时也能渲染成表格", async () => {
+  render(
+    <MarkdownContent
+      content={"待办：| 事项 | 责任人 |\n|---|---|\n| 确认是否为本地功能 | 未指定 |"}
+    />,
+  );
+  const headers = await screen.findAllByRole("columnheader");
+  expect(headers.map((h) => h.textContent)).toEqual(["事项", "责任人"]);
+  expect(screen.getAllByRole("cell").map((c) => c.textContent)).toEqual([
+    "确认是否为本地功能",
+    "未指定",
+  ]);
+  // 说明文字保留，另起一行
+  expect(screen.getByText("待办：")).toBeInTheDocument();
+});
+
+test("正文里的竖线不会被误判成表格", async () => {
+  render(<MarkdownContent content={"A | B 是并列写法\n不是表格"} />);
+  expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  expect(screen.getByText(/A \| B 是并列写法/)).toBeInTheDocument();
+});
+
 test("有序/无序列表补回序号与缩进（Tailwind preflight 会清掉默认样式）", async () => {
   render(<MarkdownContent content={"1. 第一项\n2. 第二项\n\n- 甲\n- 乙"} />);
   const [ordered, unordered] = await screen.findAllByRole("list");

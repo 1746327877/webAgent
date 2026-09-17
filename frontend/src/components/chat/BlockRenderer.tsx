@@ -80,7 +80,7 @@ export default function BlockRenderer({
     const argsText =
       typeof rawArgs === "string" ? rawArgs : rawArgs ? JSON.stringify(rawArgs) : "";
     return (
-      <div className="my-1 rounded border border-dashed px-3 py-2 text-xs text-muted-foreground">
+      <div className="my-1 w-fit max-w-full rounded border border-dashed px-3 py-2 text-xs text-muted-foreground">
         🔧 调用工具 <span className="font-mono">{String(block.tool)}</span>
         {argsText && argsText !== "{}" ? <span className="ml-1 opacity-70">{argsText}</span> : null}
       </div>
