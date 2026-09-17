@@ -243,7 +243,7 @@ export default function MarkdownContent({
       <th
         {...props}
         className={cn(
-          "border-b border-r border-border/60 bg-muted/50 px-2 py-1 text-left font-medium last:border-r-0",
+          "border-b border-r border-border/60 bg-muted/50 px-2 py-1 text-center font-medium last:border-r-0",
           props.className,
         )}
       />

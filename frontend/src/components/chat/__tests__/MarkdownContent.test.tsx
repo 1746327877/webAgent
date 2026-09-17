@@ -38,6 +38,8 @@ test("模型把表头写在说明文字同一行时也能渲染成表格", async
   );
   const headers = await screen.findAllByRole("columnheader");
   expect(headers.map((h) => h.textContent)).toEqual(["事项", "责任人"]);
+  // 表头默认居中
+  expect(headers[0]).toHaveClass("text-center");
   expect(screen.getAllByRole("cell").map((c) => c.textContent)).toEqual([
     "确认是否为本地功能",
     "未指定",
