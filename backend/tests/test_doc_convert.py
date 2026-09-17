@@ -112,3 +112,39 @@ def test_docx_to_html_contains_semantics(tmp_path):
     docx_bytes = convert_file(write(tmp_path, "note.md", "# 甲\n\n乙"), "md", "docx").data
     html = docx_to_html(write(tmp_path, "note.docx", docx_bytes))
     assert "<h1>" in html and "甲" in html
+
+
+def make_pdf(tmp_path, text: str):
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page()
+    # 用默认 Helvetica 写 ASCII，保证抽取得回原文字（CID 字体的抽取不稳定，见 Task 4 说明）
+    page.insert_text((72, 72), text)
+    data = doc.tobytes()
+    doc.close()
+    return write(tmp_path, "src.pdf", data)
+
+
+def test_pdf_to_markdown(tmp_path):
+    out = convert_file(make_pdf(tmp_path, "PDF body hello"), "pdf", "md")
+    assert "PDF body hello" in out.data.decode("utf-8")
+
+
+def test_pdf_to_docx(tmp_path):
+    import docx
+
+    out = convert_file(make_pdf(tmp_path, "PDF body hello"), "pdf", "docx")
+    document = docx.Document(io.BytesIO(out.data))
+    assert any("PDF body hello" in p.text for p in document.paragraphs)
+
+
+def test_empty_pdf_is_rejected(tmp_path):
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page()
+    data = doc.tobytes()
+    doc.close()
+    with pytest.raises(ConvertError, match="未提取到"):
+        convert_file(write(tmp_path, "empty.pdf", data), "pdf", "md")
