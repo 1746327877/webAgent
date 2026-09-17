@@ -6,10 +6,12 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.convert import DOCX_MIME
+from app.ai.convert.readers import docx_to_html
 from app.api.v1.deps import get_current_user
 from app.core.config import settings
 from app.core.db import get_db
@@ -87,3 +89,28 @@ async def download_artifact(
     if not path.is_file():
         raise HTTPException(status_code=404, detail="产物文件不存在")
     return FileResponse(path, media_type=artifact.mime_type, filename=artifact.filename)
+
+
+@router.get("/artifacts/{aid}/preview", response_class=HTMLResponse)
+async def preview_artifact(
+    aid: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """docx 产物的 HTML 预览（浏览器不能原生预览 docx）；其它类型无需服务端预览。"""
+    artifact = await artifact_service.get_owned_artifact(db, user, aid)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="产物不存在")
+    if artifact.mime_type != DOCX_MIME:
+        raise HTTPException(status_code=415, detail="该类型无需服务端预览")
+    # 落盘名恒为 "{uuid}.{ext}"；含路径分隔符的脏数据一律拒绝，避免越界读取
+    if "/" in artifact.file_path or "\\" in artifact.file_path:
+        raise HTTPException(status_code=404, detail="产物不存在")
+    path = Path(settings.upload_dir) / artifact.file_path
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="产物文件不存在")
+    try:
+        html = docx_to_html(path)
+    except Exception as exc:  # 预览失败返回可读错误，不阻断下载
+        raise HTTPException(status_code=500, detail=f"预览生成失败：{str(exc)[:200]}") from exc
+    return HTMLResponse(html)

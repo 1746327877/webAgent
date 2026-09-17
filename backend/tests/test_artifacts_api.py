@@ -168,3 +168,63 @@ async def test_create_bytes_artifact_rejects_oversized(client, auth_headers, ses
                 db, row, filename="大.md", mime_type="text/markdown",
                 data=b"x" * (artifact_service.MAX_ARTIFACT_BYTES + 1), source="tool",
             )
+
+
+async def test_docx_artifact_preview_returns_html(
+    client, auth_headers, session_maker, tmp_path
+):
+    import uuid as _uuid
+
+    from app.ai.convert import convert_file
+    from app.models import Session as SessionModel
+    from app.services import artifact_service
+
+    session = await _seed_session(client, auth_headers, session_maker, title="预览")
+    src = tmp_path / "n.md"
+    src.write_text("# 预览标题\n\n预览正文", encoding="utf-8")
+    converted = convert_file(src, "md", "docx")
+    async with session_maker() as db:
+        row = await db.get(SessionModel, _uuid.UUID(session["id"]))
+        artifact = await artifact_service.create_bytes_artifact(
+            db, row, filename="预览.docx", mime_type=converted.mime,
+            data=converted.data, source="tool",
+        )
+
+    r = await client.get(f"/api/v1/artifacts/{artifact.id}/preview", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert "预览正文" in r.text
+
+
+async def test_preview_rejects_non_docx(client, auth_headers, session_maker):
+    session = await _seed_session(client, auth_headers, session_maker)
+    created = (
+        await client.post(
+            f"/api/v1/sessions/{session['id']}/artifacts/markdown", headers=auth_headers
+        )
+    ).json()
+    r = await client.get(f"/api/v1/artifacts/{created['id']}/preview", headers=auth_headers)
+    assert r.status_code == 415
+
+
+async def test_preview_owner_isolation(client, auth_headers, session_maker, tmp_path):
+    import uuid as _uuid
+
+    from app.ai.convert import convert_file
+    from app.models import Session as SessionModel
+    from app.services import artifact_service
+    from tests.test_sessions_api import make_user
+
+    session = await _seed_session(client, auth_headers, session_maker, title="预览")
+    src = tmp_path / "n.md"
+    src.write_text("# 标题\n\n正文", encoding="utf-8")
+    converted = convert_file(src, "md", "docx")
+    async with session_maker() as db:
+        row = await db.get(SessionModel, _uuid.UUID(session["id"]))
+        artifact = await artifact_service.create_bytes_artifact(
+            db, row, filename="预览.docx", mime_type=converted.mime,
+            data=converted.data, source="tool",
+        )
+    other = await make_user(client, "bob")
+    r = await client.get(f"/api/v1/artifacts/{artifact.id}/preview", headers=other)
+    assert r.status_code == 404
