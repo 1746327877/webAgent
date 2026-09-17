@@ -17,6 +17,8 @@ import { createTokenBuffer } from "@/lib/tokenBuffer";
 import type { SSEEvent } from "@/lib/sse";
 import type { Citation } from "@/lib/citations";
 import Composer, { MAX_ATTACHMENTS, type PendingAttachment } from "@/components/chat/Composer";
+import ArtifactPanel from "@/components/chat/ArtifactPanel";
+import { useExportMarkdown } from "@/api/artifacts";
 import MessageActions from "@/components/chat/MessageActions";
 import MessageList from "@/components/chat/MessageList";
 import { Button } from "@/components/ui/button";
@@ -72,6 +74,9 @@ export default function ChatView() {
   const setModelOverride = useComposerStore((s) => s.setModelOverride);
   const webSearch = useComposerStore((s) => s.webSearch);
   const setWebSearch = useComposerStore((s) => s.setWebSearch);
+  // 会话产物（导出纪要等）：面板开关 + 导出动作
+  const [artifactsOpen, setArtifactsOpen] = useState(false);
+  const exportMarkdown = useExportMarkdown(sessionId);
   // 未配置/不可用时按钮禁用；轮询通过 useWebSearchStatus 内置的 refetchInterval
   const { data: webSearchStatus } = useWebSearchStatus();
   const webSearchAvailable = Boolean(webSearchStatus?.enabled && webSearchStatus?.healthy);
@@ -314,6 +319,17 @@ export default function ChatView() {
     );
   }
 
+  /** 导出当前会话为 Markdown 产物；成功后自动打开产物区，让用户立刻看到结果 */
+  async function exportMinutes() {
+    if (!sessionId) return;
+    try {
+      await exportMarkdown.mutateAsync();
+      setArtifactsOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "导出失败", sessionId);
+    }
+  }
+
   async function editAndResend(messageId: string, text: string) {
     if (!sessionId) return;
     const res = await apiFetch(`/api/v1/messages/${messageId}`, {
@@ -480,6 +496,21 @@ export default function ChatView() {
             >
               查看调用链
             </Link>
+            {sessionId && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={exportMarkdown.isPending}
+                  onClick={() => void exportMinutes()}
+                >
+                  {exportMarkdown.isPending ? "导出中…" : "导出纪要"}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setArtifactsOpen((open) => !open)}>
+                  产物
+                </Button>
+              </>
+            )}
           </div>
         )}
         {showWelcome && agent ? (
@@ -548,6 +579,9 @@ export default function ChatView() {
           webSearchAvailable={webSearchAvailable}
         />
       </div>
+      {sessionId && artifactsOpen && (
+        <ArtifactPanel sessionId={sessionId} onClose={() => setArtifactsOpen(false)} />
+      )}
       {openCitation && (
         <aside
           aria-label="引用依据"

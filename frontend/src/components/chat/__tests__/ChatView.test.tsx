@@ -83,6 +83,14 @@ vi.mock("@/api/capabilities", () => ({
   }),
 }));
 
+// 产物：ChatView 头部有「导出纪要 / 产物」按钮，避免测试里发真实请求
+vi.mock("@/api/artifacts", () => ({
+  useArtifacts: () => ({ data: [], isLoading: false }),
+  useExportMarkdown: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  artifactFileUrl: (id: string) => `/api/v1/artifacts/${id}`,
+  downloadArtifact: vi.fn(),
+}));
+
 // 流式事件按序同步派发后挂起，便于断言叠加层渲染（结束后会被 clearActive 清掉）
 vi.mock("@/lib/stream", () => ({
   streamRequest: async (

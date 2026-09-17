@@ -1,6 +1,7 @@
 from app.models.agent import Agent, AgentVersion
 from app.models.agent_capability import AgentMcpTool, AgentSkill
 from app.models.api_key import ApiKey
+from app.models.artifact import Artifact
 from app.models.base import Base
 from app.models.knowledge import AgentKB, Chunk, Document, KnowledgeBase
 from app.models.mcp_server import McpServer
@@ -21,6 +22,7 @@ __all__ = [
     "AlertEvent",
     "AlertRule",
     "ApiKey",
+    "Artifact",
     "Attachment",
     "Base",
     "Chunk",
