@@ -175,3 +175,18 @@ def test_docx_to_pdf(tmp_path):
     docx_bytes = convert_file(write(tmp_path, "n.md", "# 甲\n\n乙"), "md", "docx").data
     out = convert_file(write(tmp_path, "n.docx", docx_bytes), "docx", "pdf")
     assert out.data[:5] == b"%PDF-"
+
+
+def test_markdown_to_pdf_long_table_cell_does_not_crash(tmp_path):
+    cell = "很长的说明文字" * 20
+    md = f"| 名称 | 说明 |\n| --- | --- |\n| A | {cell} |\n"
+    out = convert_file(write(tmp_path, "t.md", md), "md", "pdf")
+    assert out.data[:5] == b"%PDF-"
+
+
+def test_pdf_rule_is_separator_not_page_break(tmp_path):
+    out = convert_file(write(tmp_path, "r.md", "第一段\n\n---\n\n第二段"), "md", "pdf")
+    import fitz
+
+    with fitz.open(stream=out.data, filetype="pdf") as pdf:
+        assert pdf.page_count == 1

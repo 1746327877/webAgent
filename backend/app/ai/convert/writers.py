@@ -164,6 +164,7 @@ def to_pdf(blocks: list[Block]) -> bytes:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
     from reportlab.platypus import (
+        HRFlowable,
         ListFlowable,
         ListItem,
         SimpleDocTemplate,
@@ -182,6 +183,10 @@ def to_pdf(blocks: list[Block]) -> bytes:
     )
     code = ParagraphStyle("cjk-code", parent=body, fontName="Courier", fontSize=9, leading=12)
     heading_sizes = {1: 20, 2: 16, 3: 14, 4: 12, 5: 11, 6: 11}
+    page_margin = 18 * mm
+    # 版心可用宽度：表格必须显式按此均分列宽，否则 reportlab 自动算宽遇到超长
+    # 单元格（整词无法换行）会得出负可用宽并抛裸 ValueError，见评审修复。
+    content_width = A4[0] - 2 * page_margin
 
     flow: list = []
     for block in blocks:
@@ -213,7 +218,9 @@ def to_pdf(blocks: list[Block]) -> bytes:
             rows = _table_rows(block)
             if rows:
                 data = [[RLParagraph(escape(cell), body) for cell in row] for row in rows]
-                table = RLTable(data, repeatRows=1)
+                # 列宽按版心均分；单元格本身是 RLParagraph，会在固定宽度内换行。
+                col_widths = [content_width / len(rows[0])] * len(rows[0])
+                table = RLTable(data, colWidths=col_widths, repeatRows=1)
                 table.setStyle(
                     TableStyle(
                         [
@@ -225,18 +232,30 @@ def to_pdf(blocks: list[Block]) -> bytes:
                 )
                 flow.append(table)
                 flow.append(Spacer(1, 6))
-        elif isinstance(block, (PageBreak, Rule)):
+        elif isinstance(block, PageBreak):
             if flow:
                 flow.append(RLPageBreak())
+        elif isinstance(block, Rule):
+            # Rule 是"分隔线"语义（md `---` / HTML <hr>），渲染成横线而非分页，
+            # 与 md/docx writer 保持一致；只有显式 PageBreak 才强制换页。
+            flow.append(
+                HRFlowable(
+                    width="100%",
+                    thickness=0.5,
+                    color=colors.HexColor("#999999"),
+                    spaceBefore=6,
+                    spaceAfter=6,
+                )
+            )
     if not flow:
         flow.append(Spacer(1, 1))
     buffer = io.BytesIO()
     SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
-        topMargin=18 * mm,
-        bottomMargin=18 * mm,
+        leftMargin=page_margin,
+        rightMargin=page_margin,
+        topMargin=page_margin,
+        bottomMargin=page_margin,
     ).build(flow)
     return buffer.getvalue()

@@ -44,10 +44,13 @@ def convert_file(path: Path, src_ext: str, target: str) -> ConvertedDoc:
     if not blocks:
         hint = "（可能是扫描件，未接入 OCR）" if src_ext == "pdf" else ""
         raise ConvertError(f"未提取到可转换的内容{hint}")
-    if target == "md":
-        data = to_markdown(blocks)
-    elif target == "docx":
-        data = to_docx(blocks)
-    else:
-        data = to_pdf(blocks)
+    try:
+        if target == "md":
+            data = to_markdown(blocks)
+        elif target == "docx":
+            data = to_docx(blocks)
+        else:
+            data = to_pdf(blocks)
+    except Exception as exc:  # 渲染失败统一转为用户可读 ConvertError，原始异常由 from 保留堆栈
+        raise ConvertError(f"生成 {target} 失败：{str(exc)[:200]}") from exc
     return ConvertedDoc(data=data, mime=MIME_BY_TARGET[target], ext=target)
