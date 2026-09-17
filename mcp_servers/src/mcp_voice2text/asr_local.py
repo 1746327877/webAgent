@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import io
+import os
 import threading
 
 from src.config import settings
@@ -38,6 +39,7 @@ def get_model():
         if _model is None:
             from faster_whisper import WhisperModel
 
+            _enable_cuda_dlls()
             logger.info("加载 Whisper 模型 %s（device=%s, compute=%s）", settings.WHISPER_MODEL, settings.WHISPER_DEVICE, settings.WHISPER_COMPUTE_TYPE)
             _model = WhisperModel(
                 settings.WHISPER_MODEL,
@@ -45,6 +47,50 @@ def get_model():
                 compute_type=settings.WHISPER_COMPUTE_TYPE,
             )
     return _model
+
+
+# Windows 上 ctranslate2 需要能找到 CUDA 运行库（cublas64_12 / cudnn64_9 等）。
+# 这些 DLL 由 pip 包 nvidia-*-cu12 提供，落在 site-packages/nvidia/*/bin，
+# 不在默认 DLL 搜索路径里，因此显式 add_dll_directory（句柄必须保持存活）。
+_cuda_dll_handles: list = []
+
+
+def _enable_cuda_dlls() -> None:
+    """让 ctranslate2 能找到 CUDA 运行库（cublas64_12 / cublasLt64_12 / cudnn64_9）。
+
+    两个来源：`WHISPER_CUDA_DLL_DIRS` 显式指定（例如复用 Ollama 自带的 CUDA 库，
+    省掉 1.3GB 的 pip 包），以及 pip 包 `nvidia-*-cu12` 落在 site-packages/nvidia/*/bin。
+
+    **只调 `os.add_dll_directory` 不够**：ctranslate2.dll 用普通 LoadLibrary 解析依赖，
+    走的是标准搜索顺序（含 PATH），因此这里同时把它们前置进 PATH。
+    """
+    if os.name != "nt" or not settings.WHISPER_DEVICE.lower().startswith("cuda"):
+        return
+
+    import site
+    from pathlib import Path
+
+    dirs: list[Path] = []
+    for raw in (settings.WHISPER_CUDA_DLL_DIRS or "").split(";"):
+        if raw.strip():
+            dirs.append(Path(raw.strip()))
+    for site_dir in site.getsitepackages() + [site.getusersitepackages()]:
+        nvidia_root = Path(site_dir) / "nvidia"
+        if nvidia_root.is_dir():
+            dirs.extend(sorted(nvidia_root.glob("*/bin")))
+
+    existing = [entry for entry in dirs if entry.is_dir()]
+    if not existing:
+        return
+
+    os.environ["PATH"] = ";".join(str(d) for d in existing) + ";" + os.environ.get("PATH", "")
+    for directory in existing:
+        try:
+            _cuda_dll_handles.append(os.add_dll_directory(str(directory)))
+        except OSError:
+            # 不支持 add_dll_directory 时忽略：PATH 已经覆盖
+            continue
+    logger.info("CUDA DLL 目录已加入搜索路径：%s", [str(d) for d in existing])
 
 
 def model_info() -> dict:

@@ -1,0 +1,5 @@
+# 可选：在 NVIDIA GPU 上跑 faster-whisper 需要 CUDA 运行库（pip 分发，约 1GB）
+# ctranslate2 通过它们找到 cublas64_12 / cudnn64_9 等 DLL；纯 CPU 用户不需要装。
+# 安装：.\scripts\start-mcp.ps1 -Install -Cuda
+nvidia-cublas-cu12
+nvidia-cudnn-cu12

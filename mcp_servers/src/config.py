@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # streamable-http 单次请求体上限（MB）。SDK 默认 4MB，但平台用 base64 传音频
     # （体积放大 ~33%），因此放宽；要大于 ASR_MAX_BYTES * 1.34
     MCP_MAX_REQUEST_BODY_MB: int = 64
+    # 额外的 CUDA 运行库目录（`;` 分隔）。ctranslate2 用普通 LoadLibrary 找依赖，
+    # 只 add_dll_directory 不够、必须进 PATH；本机可直接复用 Ollama 自带的 CUDA 库，
+    # 省掉 1.3GB 下载（启动脚本会自动探测并填入）
+    WHISPER_CUDA_DLL_DIRS: str = ""
 
 
 settings = Settings()

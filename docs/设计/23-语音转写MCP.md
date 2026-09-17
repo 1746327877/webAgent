@@ -146,17 +146,33 @@ run_generation(audio_files=[(path, original_name), ...])
 
 ## 23.6 部署：跑在宿主机（推荐）
 
-Whisper large-v3 约 3GB，且本机无 CUDA（CPU 推理），因此 MCP 与模型都放宿主机：
+Whisper large-v3 约 3GB，模型放在宿主机（HF 缓存）里；**有 NVIDIA GPU 时务必启用 CUDA**，否则会白跑 CPU（实测差一个数量级，见 §23.9）。
 
 ```powershell
-.\scripts\start-mcp.ps1 -Install    # 首次：建 venv + 装依赖（几百 MB）
-.\scripts\start-mcp.ps1             # 启动 mcp_voice2text，默认 large-v3 / CPU / int8
-.\scripts\start-mcp.ps1 -Stop       # 停止
+.\scripts\start-mcp.ps1 -Install -Cuda    # 首次：建 venv + 装依赖 + CUDA 运行库（cublas/cudnn，~1GB）
+.\scripts\start-mcp.ps1                   # 启动；自动探测设备（有 GPU 走 cuda/int8_float16）
+.\scripts\start-mcp.ps1                   # 显存吃紧时可在 mcp_servers\.env 里改 WHISPER_COMPUTE_TYPE
 ```
 
-> 换小模型先验链路：编辑 `mcp_servers/.env` 的 `WHISPER_MODEL=Systran/faster-whisper-base`。
+`ctranslate2` 需要 `cublas64_12.dll` / `cublasLt64_12.dll` / `cudnn64_9.dll`。**不必下载 1.3GB**：本机通常已经有可复用的副本——
 
-`.env`：
+- `cublas64_12.dll` / `cublasLt64_12.dll`：**Ollama 自带**（`%LOCALAPPDATA%\Programs\Ollama\lib\ollama\cuda_v12\`），`start-mcp.ps1` 会自动发现并填进 `WHISPER_CUDA_DLL_DIRS`；
+- `cudnn64_9.dll`：`ctranslate2` 包自带（就在它的目录里）。
+
+只有两者都找不到时，才需要 `-Install -Cuda` 装 pip 版 `nvidia-cublas-cu12` / `nvidia-cudnn-cu12`。
+
+**注意坑**：这些目录**不在默认 DLL 搜索路径**里，而且**只调 `os.add_dll_directory()` 不够**——ctranslate2.dll 用普通 `LoadLibrary` 解析依赖，走标准搜索顺序（含 `PATH`）。因此 `asr_local._enable_cuda_dlls()` 同时把目录**前置进 `PATH`** 并调用 `add_dll_directory`（句柄保持存活）。缺库时的报错是 `Library cublas64_12.dll is not found or cannot be loaded`。
+
+**实测（本机 RTX 5070 Ti Laptop 12GB，2 分 23 秒中文会议录音，large-v3）**：
+
+| 设备/精度 | 预热后耗时 | 速度 |
+|---|---|---|
+| `cuda / int8_float16` | **14.1s** | **10.1x 实时** |
+| `cpu / int8` | 见 §23.9 | 约 1x 实时 |
+
+首次调用还要加上模型加载（约 30s，之后常驻）。
+
+`.env`（后端）：
 
 ```
 ASR_MCP_URL=http://host.docker.internal:10001/mcp   # 后端在 Docker 时
@@ -173,6 +189,7 @@ ASR_INPUT_MODE=base64                               # 宿主机读不到容器�
 
 - **不把 ASR 工具暴露给模型**：模型无法对"对话里出现的其它音频"（URL、工具产出文件）按需转写；需要时再补一个可被模型调用的工具。
 - **不要把本 MCP 绑给智能体/模型**（最常见的误用）：模型看到的只是附件的**文件名**（如 `test.wav`），会把文件名当路径传进来，而宿主机 MCP 读不到平台的上传目录 → 报错白跑一轮。**想让模型按需转写，用内置工具 `transcribe_audio`**（见 §23.4.5），它由平台解析附件。工具描述与错误信息里都写明了这一点；错误按原因区分（"是文件名不是路径" / "缺少 data_base64" / "读不到文件"）。
+- **GPU 与 LLM 抢显存**：ASR 在独立进程里常驻一份 large-v3（`int8_float16` 约 1.6GB），而 Ollama 的对话模型通常占 6–9GB。12GB 卡上两者共存可行，但加载更大的对话模型时可能 OOM——真出现就把 ASR 换成 `base`（`WHISPER_MODEL`）或错开使用。
 - **base64 有约 33% 传输开销**：所以后端 `ASR_MAX_BYTES`（默认 20MB）乘 1.34 必须小于 MCP 侧的请求体上限。MCP SDK 默认上限只有 **4MB**（`DEFAULT_MAX_REQUEST_BODY_SIZE`），实测 4.5MB 音频就会被回 **413**；本仓库在 `mcp_servers/src/fastmcp_body_limit.py` 里把会话管理器换成带更大上限的子类（`MCP_MAX_REQUEST_BODY_MB`，默认 64MB），并在 `server.py` 启动时安装。FastMCP 若将来原生支持该参数，删掉该文件与调用即可。
 - **CPU 推理慢**：本机无 CUDA，`large-v3` 约 4x 实时（8 秒语音 ~33 秒）。长音频体验差；有 GPU 时把 `WHISPER_DEVICE=cuda` + `WHISPER_COMPUTE_TYPE=float16` 即可。
 - **模型是进程内单例**：多开 MCP 进程会各加载一份 3GB；生产建议单实例 + 队列。
@@ -191,3 +208,22 @@ ASR_INPUT_MODE=base64                               # 宿主机读不到容器�
 - **改为工具优先**（用户反馈）：自动注入会把整份转写常驻上下文，弱模型/显存吃紧时负担重。默认 `ASR_AUTO_TRANSCRIBE=false`，只注入一行附件提示，由模型调用内置工具 `transcribe_audio` 按需转写；想要旧行为把它设成 `true`。
 - `mcp_servers/` 的工程结构照参考项目 `mcp_new/` 组织（公共 `config`/`logger` + 统一入口 `main.py` + 每服务一个 `mcp_<名字>/` 子包），新增本地 MCP 只加子包 + 登记一行，配 `scripts/start-mcp.ps1` 一键启动。
 - **放宽 MCP 请求体上限**：SDK 默认 4MB 会让 base64 音频在 413 上白跑一轮；通过显式补丁（`src/fastmcp_body_limit.py`）提到 64MB，属于"第三方库未暴露参数"的集中改动，附了删除条件。
+
+## 23.9 性能实测（本机参考）
+
+硬件：Ryzen 9 9955HX + **RTX 5070 Ti Laptop 12GB**（驱动 616.64 / CUDA 13.4），Windows。
+
+素材：同一段 **2 分 23 秒**中文会议录音（4.5MB WAV），模型 `large-v3`，`beam_size=5` + `vad_filter`：
+
+| 设备 / 精度 | 预热后耗时 | 速度 | 备注 |
+|---|---|---|---|
+| `cuda / int8_float16` | **14.1s** | **10.1x 实时** | 首次调用另加约 30s 加载模型，之后常驻 |
+| `cpu / int8` | 约 2–3 分钟（≈1x 实时） | ≈1x | 8 秒短音频实测 32.9s（其中约 25s 是加载） |
+
+平台真实链路（后端容器 → 宿主机 MCP，同一块 GPU）：短音频（177KB）**预热后 0.9s**。
+
+**结论**：
+
+1. **务必用 GPU**——CPU 与 GPU 差约一个数量级；
+2. CPU 版在内存紧张时（32GB 机器被 Ollama 等占掉一部分后）会直接 `mkl_malloc: failed to allocate memory` 失败，不只是慢；
+3. 复现：`.\scripts\start-mcp.ps1` 会自动选 `cuda/int8_float16`（日志里会打印设备与 CUDA 库目录）。

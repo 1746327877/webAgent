@@ -145,9 +145,12 @@ test("空会话不显示「跳到最新」", () => {
   expect(screen.queryByRole("button", { name: "跳到最新" })).not.toBeInTheDocument();
 });
 
-test("消息列居中收窄且纵向更紧凑", () => {
+test("消息列与输入框同宽（不再额外居中收窄），纵向更紧凑", () => {
   renderList([makeMessage("m1", "一")]);
-  const wrapper = screen.getByText("一").closest("div.mx-auto");
-  expect(wrapper).toHaveClass("max-w-3xl");
+  const wrapper = screen.getByText("一").closest("div.px-4");
+  expect(wrapper).not.toBeNull();
   expect(wrapper).toHaveClass("py-1.5");
+  // 不要 mx-auto + max-w-* 那种"居中收窄"，否则宽屏下会明显窄于输入框
+  expect(wrapper).not.toHaveClass("mx-auto");
+  expect(wrapper?.className).not.toMatch(/max-w-/);
 });
