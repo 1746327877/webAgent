@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { MessageItemData } from "@/api/sessions";
 
@@ -108,4 +108,39 @@ test("切换会话后重新置底", async () => {
     />,
   );
   await waitFor(() => expect(mocks.scrollToIndex).toHaveBeenCalledTimes(2));
+});
+
+test("离开底部时出现「跳到最新」，点击平滑滚到底；回到底部后隐藏", async () => {
+  renderList([makeMessage("m1", "一"), makeMessage("m2", "二")]);
+
+  // 初始按"在底部"处理：不该闪出按钮
+  expect(screen.queryByRole("button", { name: "跳到最新" })).not.toBeInTheDocument();
+
+  // 模拟 Virtuoso 上报"已离开底部"
+  act(() => {
+    (lastVirtuosoProps().atBottomStateChange as (value: boolean) => void)(false);
+  });
+  const button = screen.getByRole("button", { name: "跳到最新" });
+
+  mocks.scrollToIndex.mockClear();
+  fireEvent.click(button);
+  expect(mocks.scrollToIndex).toHaveBeenCalledWith({
+    index: "LAST",
+    align: "end",
+    behavior: "smooth",
+  });
+
+  // 回到底部后按钮消失
+  act(() => {
+    (lastVirtuosoProps().atBottomStateChange as (value: boolean) => void)(true);
+  });
+  expect(screen.queryByRole("button", { name: "跳到最新" })).not.toBeInTheDocument();
+});
+
+test("空会话不显示「跳到最新」", () => {
+  renderList([]);
+  act(() => {
+    (lastVirtuosoProps().atBottomStateChange as (value: boolean) => void)(false);
+  });
+  expect(screen.queryByRole("button", { name: "跳到最新" })).not.toBeInTheDocument();
 });
