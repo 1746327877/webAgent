@@ -2,6 +2,8 @@
 
 import uuid
 
+import pytest
+
 from app.models import Message
 
 
@@ -128,3 +130,41 @@ async def test_artifact_owner_isolation(client, auth_headers, session_maker):
 async def test_download_missing_artifact_is_404(client, auth_headers):
     r = await client.get(f"/api/v1/artifacts/{uuid.uuid4()}", headers=auth_headers)
     assert r.status_code == 404
+
+
+async def test_create_bytes_artifact_persists_file(client, auth_headers, session_maker):
+    import uuid as _uuid
+
+    from app.models import Session as SessionModel
+    from app.services import artifact_service
+
+    session = await _seed_session(client, auth_headers, session_maker, title="产物")
+    async with session_maker() as db:
+        row = await db.get(SessionModel, _uuid.UUID(session["id"]))
+        artifact = await artifact_service.create_bytes_artifact(
+            db,
+            row,
+            filename="报告.docx",
+            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            data=b"PK\x03\x04hello",
+            source="tool",
+        )
+    assert artifact.source == "tool" and artifact.filename == "报告.docx"
+    download = await client.get(f"/api/v1/artifacts/{artifact.id}", headers=auth_headers)
+    assert download.content == b"PK\x03\x04hello"
+
+
+async def test_create_bytes_artifact_rejects_oversized(client, auth_headers, session_maker):
+    import uuid as _uuid
+
+    from app.models import Session as SessionModel
+    from app.services import artifact_service
+
+    session = await _seed_session(client, auth_headers, session_maker, title="产物")
+    async with session_maker() as db:
+        row = await db.get(SessionModel, _uuid.UUID(session["id"]))
+        with pytest.raises(ValueError, match="过大"):
+            await artifact_service.create_bytes_artifact(
+                db, row, filename="大.md", mime_type="text/markdown",
+                data=b"x" * (artifact_service.MAX_ARTIFACT_BYTES + 1), source="tool",
+            )

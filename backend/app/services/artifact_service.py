@@ -20,10 +20,10 @@ MAX_ARTIFACT_BYTES = 5 * 1024 * 1024
 _UNSAFE_FILENAME = re.compile(r"[\\/:*?\"<>|\x00-\x1f]")
 
 
-def _safe_filename(title: str) -> str:
-    """会话标题可能含路径分隔符/控制字符，落到文件名前必须清洗。"""
-    cleaned = _UNSAFE_FILENAME.sub("_", (title or "").strip()).strip(". ")
-    return cleaned[:80] or "会话纪要"
+def safe_filename(name: str, fallback: str = "文件") -> str:
+    """展示用文件名清洗：去掉路径分隔符/控制字符，限长，空值回落 fallback。"""
+    cleaned = _UNSAFE_FILENAME.sub("_", (name or "").strip()).strip(". ")
+    return cleaned[:80] or fallback
 
 
 def render_session_markdown(session: Session, messages: list[Message]) -> str:
@@ -73,24 +73,32 @@ async def load_messages(db: AsyncSession, session: Session) -> list[Message]:
     )
 
 
-async def create_markdown_artifact(
-    db: AsyncSession, session: Session, messages: list[Message]
+async def create_bytes_artifact(
+    db: AsyncSession,
+    session: Session,
+    *,
+    filename: str,
+    mime_type: str,
+    data: bytes,
+    source: str,
 ) -> Artifact:
-    """导出为 Markdown 并落盘；返回产物行。"""
-    data = render_session_markdown(session, messages).encode("utf-8")
-    if len(data) > MAX_ARTIFACT_BYTES:
-        raise ValueError(f"导出内容过大（{len(data)} 字节）")
+    """把字节落成会话产物；超限抛 ValueError（调用方转可读错误）。
 
-    stored_name = f"{uuid.uuid4()}.md"
+    落盘约定与附件一致：`settings.upload_dir/{uuid}.{ext}`，扩展名取自 filename。
+    """
+    if len(data) > MAX_ARTIFACT_BYTES:
+        raise ValueError(f"产物过大（{len(data)} 字节）")
+    ext = Path(filename).suffix.lstrip(".") or "bin"
+    stored_name = f"{uuid.uuid4()}.{ext}"
     path = Path(settings.upload_dir) / stored_name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
 
     artifact = Artifact(
         session_id=session.id,
-        source="export",
-        filename=f"{_safe_filename(session.title)}.md",
-        mime_type="text/markdown",
+        source=source,
+        filename=filename,
+        mime_type=mime_type,
         size_bytes=len(data),
         file_path=stored_name,
     )
@@ -98,6 +106,21 @@ async def create_markdown_artifact(
     await db.commit()
     await db.refresh(artifact)
     return artifact
+
+
+async def create_markdown_artifact(
+    db: AsyncSession, session: Session, messages: list[Message]
+) -> Artifact:
+    """导出为 Markdown 并落盘；返回产物行。"""
+    data = render_session_markdown(session, messages).encode("utf-8")
+    return await create_bytes_artifact(
+        db,
+        session,
+        filename=f"{safe_filename(session.title, '会话纪要')}.md",
+        mime_type="text/markdown",
+        data=data,
+        source="export",
+    )
 
 
 async def list_artifacts(db: AsyncSession, session: Session) -> list[Artifact]:
