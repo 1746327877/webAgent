@@ -39,6 +39,11 @@ export function artifactFileUrl(id: string): string {
   return `/api/v1/artifacts/${id}`;
 }
 
+/** docx 等无法原生预览的产物走后端转 HTML（Task 8），返回 text/html */
+export function artifactPreviewUrl(id: string): string {
+  return `/api/v1/artifacts/${id}/preview`;
+}
+
 /** 产物下载要走鉴权（apiFetch 带 token），所以用 blob + 临时 <a> 触发保存 */
 export async function downloadArtifact(artifact: ArtifactInfo): Promise<void> {
   const res = await apiFetch(artifactFileUrl(artifact.id));

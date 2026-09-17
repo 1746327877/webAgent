@@ -223,6 +223,8 @@ export default function ChatView() {
       clearActive(streamId);
       setPendingUser(null);
       await queryClient.invalidateQueries({ queryKey: ["messages", targetSession] });
+      // doc_convert 等工具在流中途产出新产物，结束时刷新让产物区出现新条目
+      await queryClient.invalidateQueries({ queryKey: ["artifacts", targetSession] });
       await queryClient.invalidateQueries({ queryKey: ["sessions"] });
     }
   }

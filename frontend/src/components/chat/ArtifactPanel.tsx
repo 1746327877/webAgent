@@ -4,10 +4,14 @@ import MarkdownContent from "@/components/chat/MarkdownContent";
 import { apiFetch } from "@/lib/api";
 import {
   artifactFileUrl,
+  artifactPreviewUrl,
   downloadArtifact,
   useArtifacts,
   type ArtifactInfo,
 } from "@/api/artifacts";
+
+/** 与后端 app/ai/convert.DOCX_MIME 一致：docx 不能原生预览，走后端转 HTML */
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 /**
  * 右侧产物区：列出会话产物并预览。
@@ -80,6 +84,7 @@ function formatSize(bytes: number): string {
 
 function ArtifactPreview({ artifact }: { artifact: ArtifactInfo }) {
   const [text, setText] = useState<string | null>(null);
+  const [html, setHtml] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,11 +92,19 @@ function ArtifactPreview({ artifact }: { artifact: ArtifactInfo }) {
     let alive = true;
     let created: string | null = null;
     setText(null);
+    setHtml(null);
     setBlobUrl(null);
     setError(null);
 
     void (async () => {
       try {
+        if (artifact.mime_type === DOCX_MIME) {
+          const res = await apiFetch(artifactPreviewUrl(artifact.id));
+          if (!res.ok) throw new Error(`加载失败（HTTP ${res.status}）`);
+          const body = await res.text();
+          if (alive) setHtml(body);
+          return;
+        }
         const res = await apiFetch(artifactFileUrl(artifact.id));
         if (!res.ok) throw new Error(`加载失败（HTTP ${res.status}）`);
         if (artifact.mime_type.startsWith("text/")) {
@@ -130,6 +143,18 @@ function ArtifactPreview({ artifact }: { artifact: ArtifactInfo }) {
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {error ? (
           <p className="text-sm text-red-500">{error}</p>
+        ) : artifact.mime_type === DOCX_MIME ? (
+          html === null ? (
+            <p className="text-sm text-muted-foreground">加载中…</p>
+          ) : (
+            /* sandbox 不含 allow-scripts：docx 转出的 HTML 即使含脚本也不会执行 */
+            <iframe
+              sandbox=""
+              srcDoc={html}
+              title={artifact.filename}
+              className="h-full min-h-96 w-full"
+            />
+          )
         ) : artifact.mime_type.startsWith("text/") ? (
           text === null ? (
             <p className="text-sm text-muted-foreground">加载中…</p>

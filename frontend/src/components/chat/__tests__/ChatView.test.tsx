@@ -37,6 +37,7 @@ const mockState = vi.hoisted(() => ({
   lastBody: null as unknown,
   tokens: [] as string[],
   createCalls: 0,
+  finishStream: false,
 }));
 
 vi.mock("@/api/sessions", () => ({
@@ -88,6 +89,7 @@ vi.mock("@/api/artifacts", () => ({
   useArtifacts: () => ({ data: [], isLoading: false }),
   useExportMarkdown: () => ({ mutateAsync: vi.fn(), isPending: false }),
   artifactFileUrl: (id: string) => `/api/v1/artifacts/${id}`,
+  artifactPreviewUrl: (id: string) => `/api/v1/artifacts/${id}/preview`,
   downloadArtifact: vi.fn(),
 }));
 
@@ -126,6 +128,7 @@ vi.mock("@/lib/stream", () => ({
     for (const delta of mockState.tokens) {
       onEvent({ event: "token", data: { message_id: "m1", delta } });
     }
+    if (mockState.finishStream) return;
     await new Promise(() => {});
   },
 }));
@@ -193,6 +196,7 @@ beforeEach(() => {
   mockState.lastBody = null;
   mockState.tokens = [];
   mockState.createCalls = 0;
+  mockState.finishStream = false;
   useComposerStore.setState({ modelOverride: null, webSearch: false, thinking: false });
 });
 
@@ -576,4 +580,19 @@ test("单帧超大 token 量降级为纯文本渲染", async () => {
   await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "hi{Enter}");
   expect(await screen.findByText(/\*\*不加粗\*\*/)).toBeInTheDocument();
   expect(screen.queryByText("不加粗", { selector: "strong" })).not.toBeInTheDocument();
+});
+
+test("流结束后刷新产物列表", async () => {
+  mockState.finishStream = true;
+  const spy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  renderAt("s1");
+  await userEvent.type(screen.getByPlaceholderText("输入问题，Enter 发送"), "转换{Enter}");
+  await waitFor(() =>
+    expect(
+      spy.mock.calls.some(
+        (call) => JSON.stringify(call[0]) === JSON.stringify({ queryKey: ["artifacts", "s1"] }),
+      ),
+    ).toBe(true),
+  );
+  spy.mockRestore();
 });
