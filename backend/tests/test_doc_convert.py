@@ -148,3 +148,30 @@ def test_empty_pdf_is_rejected(tmp_path):
     doc.close()
     with pytest.raises(ConvertError, match="未提取到"):
         convert_file(write(tmp_path, "empty.pdf", data), "pdf", "md")
+
+
+def test_markdown_to_pdf(tmp_path):
+    out = convert_file(
+        write(tmp_path, "n.md", "# Title\n\nBody text\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n"),
+        "md",
+        "pdf",
+    )
+    assert out.data[:5] == b"%PDF-"
+    # CID 字体（STSong-Light）的文本抽取依赖阅读器内置 CMap，断言不可靠；
+    # 只验证是合法 PDF 且页数正常，"内容不丢"由 md/docx 目标的用例覆盖。
+    import fitz
+
+    with fitz.open(stream=out.data, filetype="pdf") as pdf:
+        assert pdf.page_count >= 1
+
+
+def test_markdown_to_pdf_with_chinese(tmp_path):
+    # 中文走 CID 内置字体：只验证不报错且是合法 PDF（CID 文本抽取不可靠，不断言原文）
+    out = convert_file(write(tmp_path, "c.md", "# 中文标题\n\n正文内容"), "md", "pdf")
+    assert out.data[:5] == b"%PDF-"
+
+
+def test_docx_to_pdf(tmp_path):
+    docx_bytes = convert_file(write(tmp_path, "n.md", "# 甲\n\n乙"), "md", "docx").data
+    out = convert_file(write(tmp_path, "n.docx", docx_bytes), "docx", "pdf")
+    assert out.data[:5] == b"%PDF-"

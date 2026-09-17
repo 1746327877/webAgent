@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.ai.convert.readers import read_source
-from app.ai.convert.writers import to_docx, to_markdown
+from app.ai.convert.writers import to_docx, to_markdown, to_pdf
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 MIME_BY_TARGET = {"md": "text/markdown", "docx": DOCX_MIME, "pdf": "application/pdf"}
@@ -49,6 +49,5 @@ def convert_file(path: Path, src_ext: str, target: str) -> ConvertedDoc:
     elif target == "docx":
         data = to_docx(blocks)
     else:
-        # TODO(task4): 接入 to_pdf 后删除本分支，pdf 目标当前为占位
-        raise ConvertError("目标格式仅支持 md / docx / pdf")
+        data = to_pdf(blocks)
     return ConvertedDoc(data=data, mime=MIME_BY_TARGET[target], ext=target)

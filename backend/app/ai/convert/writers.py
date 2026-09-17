@@ -1,6 +1,7 @@
 """把 IR 渲染成目标格式（md / docx / pdf）。"""
 
 import io
+from xml.sax.saxutils import escape
 
 from app.ai.convert.ir import (
     Block,
@@ -134,4 +135,108 @@ def to_docx(blocks: list[Block]) -> bytes:
             document.add_paragraph("―" * 10)
     buffer = io.BytesIO()
     document.save(buffer)
+    return buffer.getvalue()
+
+
+# ---------- PDF ----------
+
+_CJK_FONT = "STSong-Light"
+# reportlab 的字体注册是进程级全局状态：只注册一次、幂等；并发首次调用可能重复注册
+# （相同字体名 + 相同定义，reportlab 幂等处理），无副作用。
+_cjk_registered = False
+
+
+def _ensure_cjk_font() -> None:
+    """注册 reportlab 内置简体中文 CID 字体，无需外部字体文件。"""
+    global _cjk_registered
+    if _cjk_registered:
+        return
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+
+    pdfmetrics.registerFont(UnicodeCIDFont(_CJK_FONT))
+    _cjk_registered = True
+
+
+def to_pdf(blocks: list[Block]) -> bytes:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        ListFlowable,
+        ListItem,
+        SimpleDocTemplate,
+        Spacer,
+        TableStyle,
+    )
+    from reportlab.platypus import PageBreak as RLPageBreak
+    from reportlab.platypus import Paragraph as RLParagraph
+    from reportlab.platypus import Table as RLTable
+
+    _ensure_cjk_font()
+    base = getSampleStyleSheet()["BodyText"]
+    body = ParagraphStyle("cjk-body", parent=base, fontName=_CJK_FONT, fontSize=10.5, leading=16)
+    quote = ParagraphStyle(
+        "cjk-quote", parent=body, leftIndent=12, textColor=colors.HexColor("#555555")
+    )
+    code = ParagraphStyle("cjk-code", parent=body, fontName="Courier", fontSize=9, leading=12)
+    heading_sizes = {1: 20, 2: 16, 3: 14, 4: 12, 5: 11, 6: 11}
+
+    flow: list = []
+    for block in blocks:
+        if isinstance(block, Heading):
+            level = min(max(block.level, 1), 6)
+            style = ParagraphStyle(
+                f"cjk-h{level}",
+                parent=body,
+                fontName=_CJK_FONT,
+                fontSize=heading_sizes[level],
+                leading=heading_sizes[level] + 6,
+                spaceBefore=10,
+                spaceAfter=6,
+            )
+            flow.append(RLParagraph(escape(spans_text(block.spans)), style))
+        elif isinstance(block, Paragraph):
+            flow.append(RLParagraph(escape(spans_text(block.spans)), body))
+        elif isinstance(block, ListBlock):
+            items = [ListItem(RLParagraph(escape(spans_text(item)), body)) for item in block.items]
+            if items:
+                flow.append(ListFlowable(items, bulletType="1" if block.ordered else "bullet"))
+        elif isinstance(block, CodeBlock):
+            for line in block.text.split("\n"):
+                flow.append(RLParagraph(escape(line) or "&nbsp;", code))
+            flow.append(Spacer(1, 4))
+        elif isinstance(block, Quote):
+            flow.append(RLParagraph(escape(spans_text(block.spans)), quote))
+        elif isinstance(block, TableBlock):
+            rows = _table_rows(block)
+            if rows:
+                data = [[RLParagraph(escape(cell), body) for cell in row] for row in rows]
+                table = RLTable(data, repeatRows=1)
+                table.setStyle(
+                    TableStyle(
+                        [
+                            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+                            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ]
+                    )
+                )
+                flow.append(table)
+                flow.append(Spacer(1, 6))
+        elif isinstance(block, (PageBreak, Rule)):
+            if flow:
+                flow.append(RLPageBreak())
+    if not flow:
+        flow.append(Spacer(1, 1))
+    buffer = io.BytesIO()
+    SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=18 * mm,
+        bottomMargin=18 * mm,
+    ).build(flow)
     return buffer.getvalue()
