@@ -62,6 +62,16 @@ test("列表项后面直接跟表格也能渲染（表格不能打断段落，�
   ]);
 });
 
+test("表头：分隔行写成 :--- 时也居中（丢弃 gfm 的内联对齐）", async () => {
+  render(<MarkdownContent content={"| 事项 | 值 |\n| :--- | :---: |\n| a | b |"} />);
+  const headers = await screen.findAllByRole("columnheader");
+  // gfm 会按分隔行加 style="text-align: left"，内联样式会盖掉类名 → 必须丢掉
+  for (const header of headers) {
+    expect(header).not.toHaveAttribute("style");
+    expect(header).toHaveClass("text-center");
+  }
+});
+
 test("正文里的竖线不会被误判成表格", async () => {
   render(<MarkdownContent content={"A | B 是并列写法\n不是表格"} />);
   expect(screen.queryByRole("table")).not.toBeInTheDocument();
@@ -90,8 +100,11 @@ test("markdown 表格渲染出表头与单元格，并包在可横向滚动的�
   const cells = screen.getAllByRole("cell");
   expect(cells.map((c) => c.textContent)).toEqual(["发布", "张三"]);
   // 列之间要有分隔线，否则多列内容会糊在一起
-  expect(cells[0]).toHaveClass("border-r");
+  expect(cells[0]).toHaveClass("border-r-[1.5px]");
   expect(cells[1]).toHaveClass("last:border-r-0");
+  // 表头即使分隔行是 `:---`（gfm 会写内联 text-align:left）也必须居中
+  expect(headers[0]).not.toHaveAttribute("style");
+  expect(headers[0]).toHaveClass("text-center");
   // 宽度按内容自适应（最宽的列），不能 w-full 撑到页面边缘
   const table = screen.getByRole("table");
   expect(table).not.toHaveClass("w-full");

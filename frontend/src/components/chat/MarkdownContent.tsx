@@ -235,24 +235,27 @@ export default function MarkdownContent({
     // 宽度按内容（最宽的列）自适应，不要 `w-full` 撑到页面边缘；外层 inline-block +
     // max-w-full 保证超宽表仍可横向滚动。
     table: ({ node: _node, ...props }: ComponentPropsWithoutRef<"table"> & ExtraProps) => (
-      <div className="my-2 inline-block max-w-full overflow-x-auto rounded-md border align-top">
+      <div className="my-2 inline-block max-w-full overflow-x-auto rounded-md border-[1.5px] border-border align-top">
         <table {...props} className={cn("border-collapse text-sm", props.className)} />
       </div>
     ),
-    th: ({ node: _node, ...props }: ComponentPropsWithoutRef<"th"> & ExtraProps) => (
+    // remark-gfm 会按分隔行给单元格写**内联** align（`:---` → style="text-align: left"），
+    // 内联样式优先级高于类名，会把表头居中盖掉；因此表头丢弃该 style，统一居中。
+    th: ({ node: _node, style: _style, ...props }: ComponentPropsWithoutRef<"th"> & ExtraProps) => (
       <th
         {...props}
         className={cn(
-          "border-b border-r border-border/60 bg-muted/50 px-2 py-1 text-center font-medium last:border-r-0",
+          "border-b-[1.5px] border-r-[1.5px] border-border bg-muted/50 px-2 py-1 text-center font-medium last:border-r-0",
           props.className,
         )}
       />
     ),
+    // 数据单元格保留 gfm 的对齐（模型可用 `:---:` / `---:` 指定居中/右对齐），默认左对齐
     td: ({ node: _node, ...props }: ComponentPropsWithoutRef<"td"> & ExtraProps) => (
       <td
         {...props}
         className={cn(
-          "border-b border-r border-border/60 px-2 py-1 align-top last:border-r-0",
+          "border-b-[1.5px] border-r-[1.5px] border-border px-2 py-1 align-top last:border-r-0",
           props.className,
         )}
       />
