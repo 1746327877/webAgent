@@ -22,3 +22,7 @@ backend/output/
 .idea/
 .vscode/
 .DS_Store
+
+# SDD / agent 临时工作区（不进仓库）
+.superpowers/
+
