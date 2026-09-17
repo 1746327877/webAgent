@@ -40,3 +40,18 @@ async def transcribe_audio(name: str = "") -> str:
     `name` 可选：只转写文件名包含它的那个音频；留空转写本轮全部音频。
     """
     return "本轮没有可转写的音频附件。"
+
+
+@tool(
+    "doc_convert",
+    "文档转换",
+    "把本轮上传的文档转换为指定格式（md/docx/pdf），生成可下载的会话产物",
+    category="document",
+    is_system=True,
+)
+async def doc_convert(target: str, name: str = "") -> str:
+    """真实转换在 runtime 层拦截（只有平台拿得到本轮附件与产物落盘能力）。
+
+    `target`：目标格式 md / docx / pdf；`name` 可选，按文件名包含匹配要转换的文档。
+    """
+    return "本轮没有可转换的文档附件。"

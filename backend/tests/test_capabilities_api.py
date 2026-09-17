@@ -50,6 +50,25 @@ async def test_tools_include_input_schema(client, auth_headers, session_maker):
     assert "query" in schema["properties"]
 
 
+async def test_doc_convert_tool_and_skill_registered(client, auth_headers, session_maker):
+    from app.ai.tools import sync_tools
+
+    async with session_maker() as db:
+        await sync_tools(db)
+
+    tools = {t["slug"]: t for t in (await client.get("/api/v1/tools", headers=auth_headers)).json()}
+    assert "doc_convert" in tools
+    properties = tools["doc_convert"]["input_schema"]["properties"]
+    assert "target" in properties and "name" in properties
+
+    skills = {
+        s["slug"]: s
+        for s in (await client.get("/api/v1/capabilities/skills", headers=auth_headers)).json()
+    }
+    assert skills["doc_convert"]["recommended_tools"] == ["doc_convert"]
+    assert "docx" in skills["doc_convert"]["summary"]
+
+
 async def test_parser_status_disabled(client, auth_headers, monkeypatch):
     monkeypatch.setattr(settings, "mineru_api_url", "")
     body = (await client.get("/api/v1/capabilities/parser", headers=auth_headers)).json()

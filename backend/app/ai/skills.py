@@ -115,19 +115,24 @@ _register(
         slug="doc_convert",
         name="文档转换",
         icon="📄",
-        summary="在 Markdown、表格、纯文本等格式间转换文档内容，尽量保留原有结构。",
+        summary="把上传的 pdf/docx/md/txt 转换成 md、docx 或 pdf 文件，产出可下载的会话产物。",
         usage=(
-            "上传文档（pdf/docx/md/txt）后说明目标格式，例如「转成 Markdown 表格」；"
-            "系统会把附件文本并入上下文，模型按目标格式重排输出。"
+            "给智能体绑定本 Skill 与「文档转换」工具；上传文档后说「转成 Word/PDF/Markdown」，"
+            "系统会生成真实文件，在右侧「产物」区下载或预览。"
         ),
         instructions=(
-            "用户要求格式转换时，严格按目标格式输出，不要附加解释性前言或多余总结。"
-            "保留原文的层级、列表与表格结构；原文缺失或无法识别的内容用「（原文缺失）」占位，禁止补写。"
-            "内容是表格数据时输出 Markdown 表格；要求纯文本时去掉 Markdown 标记但保留换行与缩进。"
-            "转换结果较长时分节输出，并在开头用一句话说明来源文件名与目标格式。"
+            "用户要求转换已上传文档的格式（Markdown / Word(docx) / PDF）时，必须调用 doc_convert 工具，"
+            "不要在回复里手动重排整份文档。target 取 md、docx 或 pdf；本轮有多个文档时用 name 指明文件名。"
+            "工具返回后，用一句话告知产物文件名，并提示可在右侧「产物」区下载或预览；不要复述转换后的全文。"
+            "只有当用户要求的不是文件格式（如「整理成表格」「去 Markdown 标记」）时，才直接在回复里重排文本。"
         ),
-        examples=["把这份 PDF 转成 Markdown", "把这段话整理成表格", "去掉 Markdown 标记，只要纯文本"],
-        recommended_tools=[],
+        examples=[
+            "把这份 PDF 转成 Word",
+            "把这份 Word 转成 Markdown",
+            "把这个 md 导出成 PDF",
+            "把这段话整理成表格",
+        ],
+        recommended_tools=["doc_convert"],
     )
 )
 
