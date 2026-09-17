@@ -43,8 +43,13 @@ test("markdown 表格渲染出表头与单元格，并包在可横向滚动的�
   // 列之间要有分隔线，否则多列内容会糊在一起
   expect(cells[0]).toHaveClass("border-r");
   expect(cells[1]).toHaveClass("last:border-r-0");
-  // 宽表要能横向滚动，否则会把气泡撑破
-  expect(screen.getByRole("table").parentElement).toHaveClass("overflow-x-auto");
+  // 宽度按内容自适应（最宽的列），不能 w-full 撑到页面边缘
+  const table = screen.getByRole("table");
+  expect(table).not.toHaveClass("w-full");
+  // 外层要能横向滚动且不超出容器（超宽表滚动，窄表贴着内容）
+  expect(table.parentElement).toHaveClass("overflow-x-auto");
+  expect(table.parentElement).toHaveClass("inline-block");
+  expect(table.parentElement).toHaveClass("max-w-full");
 });
 
 test("多行代码块里的 URL 不会被链接化", async () => {
