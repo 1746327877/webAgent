@@ -46,6 +46,20 @@ test("模型把表头写在说明文字同一行时也能渲染成表格", async
   expect(screen.getByText("待办：")).toBeInTheDocument();
 });
 
+test("列表项后面直接跟表格也能渲染（表格不能打断段落，需补空行）", async () => {
+  render(
+    <MarkdownContent
+      content={"4. **待办**：\n| 事项 | 责任人 |\n| :--- | :--- |\n| 验证代码逻辑 | 系统/测试人员 |"}
+    />,
+  );
+  const headers = await screen.findAllByRole("columnheader");
+  expect(headers.map((h) => h.textContent)).toEqual(["事项", "责任人"]);
+  expect(screen.getAllByRole("cell").map((c) => c.textContent)).toEqual([
+    "验证代码逻辑",
+    "系统/测试人员",
+  ]);
+});
+
 test("正文里的竖线不会被误判成表格", async () => {
   render(<MarkdownContent content={"A | B 是并列写法\n不是表格"} />);
   expect(screen.queryByRole("table")).not.toBeInTheDocument();

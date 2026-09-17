@@ -121,23 +121,36 @@ function isDelimiterRow(line: string): boolean {
 }
 
 /**
- * 模型常把表格紧跟在说明文字后面写（`待办：| 事项 | 责任人 |`），
- * 而 GFM 要求**表头必须单独成行**，否则整段会原样输出成纯文本。
- * 这里在渲染前把它们拆开。
+ * 修复两种"表格不渲染"的常见模型输出：
  *
- * 只在「下一行是分隔行」时才动，避免误伤正文里的竖线（如 `A | B`）。
+ * 1. 表头与说明文字写在同一行（`待办：| 事项 | 责任人 |`）——GFM 要求表头单独成行；
+ * 2. 表格紧跟在前一段/列表项后面且中间没有空行（`4. **待办**：` 换行后直接跟表格）
+ *    ——GFM 规定**表格不能打断段落**，缺空行时整张表会被当成段落文本。
+ *
+ * 只在「下一行是合法分隔行」时才动，避免误伤正文里的竖线（如 `A | B`）。
  */
 export function normalizeTables(markdown: string): string {
   const lines = markdown.split("\n");
   const out: string[] = [];
+
+  const pushBlankIfNeeded = () => {
+    if (out.length > 0 && out[out.length - 1].trim() !== "") out.push("");
+  };
+
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const next = lines[index + 1];
     if (next !== undefined && isDelimiterRow(next) && line.includes("|")) {
       const cut = line.indexOf("|");
-      const head = cut > 0 ? line.slice(0, cut).trimEnd() : "";
-      if (head) out.push(head);
-      out.push(cut > 0 ? line.slice(cut).trim() : line);
+      if (cut > 0) {
+        // 说明文字留一行，表头另起一行
+        out.push(line.slice(0, cut).trimEnd());
+        pushBlankIfNeeded();
+        out.push(line.slice(cut).trim());
+      } else {
+        pushBlankIfNeeded();
+        out.push(line);
+      }
       const nextCut = next.indexOf("|");
       out.push(nextCut > 0 ? next.slice(nextCut).trim() : next);
       index += 1;
