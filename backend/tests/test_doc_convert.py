@@ -95,3 +95,20 @@ def test_markdown_table_cell_pipe_is_escaped():
 
     text = to_markdown([TableBlock(header=["a|b", "c"], rows=[])]).decode("utf-8")
     assert "a\\|b" in text
+
+
+def test_docx_to_markdown_round_trip(tmp_path):
+    docx_bytes = convert_file(write(tmp_path, "note.md", MD_SAMPLE), "md", "docx").data
+    out = convert_file(write(tmp_path, "note.docx", docx_bytes), "docx", "md")
+    text = out.data.decode("utf-8")
+    assert "# 标题" in text
+    assert "正文包含" in text
+    assert "| 列1 | 列2 |" in text
+
+
+def test_docx_to_html_contains_semantics(tmp_path):
+    from app.ai.convert.readers import docx_to_html
+
+    docx_bytes = convert_file(write(tmp_path, "note.md", "# 甲\n\n乙"), "md", "docx").data
+    html = docx_to_html(write(tmp_path, "note.docx", docx_bytes))
+    assert "<h1>" in html and "甲" in html
