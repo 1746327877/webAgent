@@ -15,8 +15,12 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from src.config import settings
+from src.fastmcp_body_limit import install as install_body_limit
 from src.mcp_voice2text.asr_local import model_info
 from src.mcp_voice2text.voice_tool import transcribe_items
+
+# 放宽请求体上限：平台用 base64 传音频，SDK 默认 4MB 会让稍长的录音直接 413
+install_body_limit()
 
 mcp = FastMCP("voice-asr")
 

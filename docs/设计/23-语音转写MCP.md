@@ -173,7 +173,7 @@ ASR_INPUT_MODE=base64                               # 宿主机读不到容器�
 
 - **不把 ASR 工具暴露给模型**：模型无法对"对话里出现的其它音频"（URL、工具产出文件）按需转写；需要时再补一个可被模型调用的工具。
 - **不要把本 MCP 绑给智能体/模型**（最常见的误用）：模型看到的只是附件的**文件名**（如 `test.wav`），会把文件名当路径传进来，而宿主机 MCP 读不到平台的上传目录 → 报错白跑一轮。**想让模型按需转写，用内置工具 `transcribe_audio`**（见 §23.4.5），它由平台解析附件。工具描述与错误信息里都写明了这一点；错误按原因区分（"是文件名不是路径" / "缺少 data_base64" / "读不到文件"）。
-- **base64 有约 33% 传输开销**：20MB 上限对应约 27MB 请求体；语音消息通常远小于此，但超长录音不适合。
+- **base64 有约 33% 传输开销**：所以后端 `ASR_MAX_BYTES`（默认 20MB）乘 1.34 必须小于 MCP 侧的请求体上限。MCP SDK 默认上限只有 **4MB**（`DEFAULT_MAX_REQUEST_BODY_SIZE`），实测 4.5MB 音频就会被回 **413**；本仓库在 `mcp_servers/src/fastmcp_body_limit.py` 里把会话管理器换成带更大上限的子类（`MCP_MAX_REQUEST_BODY_MB`，默认 64MB），并在 `server.py` 启动时安装。FastMCP 若将来原生支持该参数，删掉该文件与调用即可。
 - **CPU 推理慢**：本机无 CUDA，`large-v3` 约 4x 实时（8 秒语音 ~33 秒）。长音频体验差；有 GPU 时把 `WHISPER_DEVICE=cuda` + `WHISPER_COMPUTE_TYPE=float16` 即可。
 - **模型是进程内单例**：多开 MCP 进程会各加载一份 3GB；生产建议单实例 + 队列。
 - **不做时间戳/分角色**：只取纯文本；"点文字跳回音频"需要 MCP 端返回分段与时间戳。
@@ -190,3 +190,4 @@ ASR_INPUT_MODE=base64                               # 宿主机读不到容器�
 - 端到端实测：上传 wav → `kind=audio` → MCP 返回正确中文 → 用户消息落 `transcript` 块（`status=ok`）。
 - **改为工具优先**（用户反馈）：自动注入会把整份转写常驻上下文，弱模型/显存吃紧时负担重。默认 `ASR_AUTO_TRANSCRIBE=false`，只注入一行附件提示，由模型调用内置工具 `transcribe_audio` 按需转写；想要旧行为把它设成 `true`。
 - `mcp_servers/` 的工程结构照参考项目 `mcp_new/` 组织（公共 `config`/`logger` + 统一入口 `main.py` + 每服务一个 `mcp_<名字>/` 子包），新增本地 MCP 只加子包 + 登记一行，配 `scripts/start-mcp.ps1` 一键启动。
+- **放宽 MCP 请求体上限**：SDK 默认 4MB 会让 base64 音频在 413 上白跑一轮；通过显式补丁（`src/fastmcp_body_limit.py`）提到 64MB，属于"第三方库未暴露参数"的集中改动，附了删除条件。

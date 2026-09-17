@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     WHISPER_BEAM_SIZE: int = 5
     # CPU 上 Whisper 很吃算力：默认只允许 2 个并发转写
     VOICE_MAX_PARALLEL: int = 2
+    # streamable-http 单次请求体上限（MB）。SDK 默认 4MB，但平台用 base64 传音频
+    # （体积放大 ~33%），因此放宽；要大于 ASR_MAX_BYTES * 1.34
+    MCP_MAX_REQUEST_BODY_MB: int = 64
 
 
 settings = Settings()
