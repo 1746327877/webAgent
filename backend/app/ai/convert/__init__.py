@@ -49,5 +49,6 @@ def convert_file(path: Path, src_ext: str, target: str) -> ConvertedDoc:
     elif target == "docx":
         data = to_docx(blocks)
     else:
+        # TODO(task4): 接入 to_pdf 后删除本分支，pdf 目标当前为占位
         raise ConvertError("目标格式仅支持 md / docx / pdf")
     return ConvertedDoc(data=data, mime=MIME_BY_TARGET[target], ext=target)

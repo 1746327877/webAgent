@@ -19,11 +19,10 @@ _VOID_TAGS = {"br", "hr", "img", "meta", "link", "input", "col"}
 _HEADING_TAGS = {f"h{level}": level for level in range(1, 7)}
 _BOLD_TAGS = {"strong", "b"}
 _ITALIC_TAGS = {"em", "i"}
-# 纯容器标签：只递归子内容，不改变块语义
-_CONTAINER_TAGS = {
-    "div", "section", "article", "span", "a", "u", "s", "del", "sup", "sub",
-    "font", "tbody", "thead", "tfoot", "html", "body", "root",
-}
+# IR 列表是扁平单层（docs/设计/25 §25.6 已知限制）：行内收集遇到块级标签时先插入
+# 换行作项边界再递归，嵌套内容允许被扁平化，但相邻文字绝不能无分隔拼在一起。
+# 不含 p/div 等：松散列表的 <p> 若加分隔符会把普通段落拆出多余空行。
+_INLINE_BREAK_TAGS = {"ul", "ol", "table", "pre", "blockquote", *_HEADING_TAGS}
 
 
 class _Node:
@@ -137,6 +136,10 @@ def _collect_inline(nodes, *, bold=False, italic=False, code=False) -> list[Span
             spans.extend(_collect_inline(node.children, bold=bold, italic=True, code=code))
         elif tag == "code":
             spans.extend(_collect_inline(node.children, bold=bold, italic=italic, code=True))
+        elif tag in _INLINE_BREAK_TAGS:
+            # 见 _INLINE_BREAK_TAGS 注释：换行作项边界，避免嵌套块的文字被拼接
+            spans.append(Span("\n"))
+            spans.extend(_collect_inline(node.children, bold=bold, italic=italic, code=code))
         else:
             spans.extend(_collect_inline(node.children, bold=bold, italic=italic, code=code))
     return _normalize_ws(spans)

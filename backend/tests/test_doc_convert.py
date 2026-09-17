@@ -51,3 +51,47 @@ def test_same_format_and_unknown_target_rejected(tmp_path):
         convert_file(src, "md", "md")
     with pytest.raises(ConvertError, match="目标格式"):
         convert_file(src, "md", "html")
+
+
+def test_markdown_to_docx_keeps_list_and_code(tmp_path):
+    out = convert_file(write(tmp_path, "note.md", MD_SAMPLE), "md", "docx")
+    import docx
+
+    document = docx.Document(io.BytesIO(out.data))
+    assert "List Bullet" in [p.style.name for p in document.paragraphs]
+    assert any("print(1)" in p.text for p in document.paragraphs)
+
+
+def test_txt_to_markdown_keeps_paragraph_break(tmp_path):
+    out = convert_file(write(tmp_path, "a.txt", "第一段\n\n第二段"), "txt", "md")
+    assert "第一段\n\n第二段" in out.data.decode("utf-8")
+
+
+def test_empty_content_is_rejected(tmp_path):
+    with pytest.raises(ConvertError, match="未提取到"):
+        convert_file(write(tmp_path, "empty.txt", "   \n\n"), "txt", "md")
+
+
+def test_missing_file_and_unsupported_source(tmp_path):
+    with pytest.raises(ConvertError, match="源文件不存在"):
+        convert_file(tmp_path / "nope.md", "md", "docx")
+    src = write(tmp_path, "a.rtf", "x")
+    with pytest.raises(ConvertError, match="不支持的来源格式"):
+        convert_file(src, "rtf", "md")
+
+
+def test_nested_list_items_do_not_merge():
+    from app.ai.convert.readers import read_markdown
+    from app.ai.convert.writers import to_markdown
+
+    text = to_markdown(read_markdown("- A\n    - A1\n- B\n")).decode("utf-8")
+    assert "AA1" not in text
+    assert "A1" in text
+
+
+def test_markdown_table_cell_pipe_is_escaped():
+    from app.ai.convert.ir import TableBlock
+    from app.ai.convert.writers import to_markdown
+
+    text = to_markdown([TableBlock(header=["a|b", "c"], rows=[])]).decode("utf-8")
+    assert "a\\|b" in text

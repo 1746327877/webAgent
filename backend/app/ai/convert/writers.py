@@ -48,6 +48,12 @@ def _md_spans(spans: list[Span]) -> str:
     return "".join(_md_span(span) for span in spans)
 
 
+def _md_cell(text: str) -> str:
+    """仅转义 markdown 管道表的单元格：竖线会切断列、换行会切断行、反斜杠是转义符。
+    只用于 md 渲染路径，docx/pdf 共用 _table_rows 的原文，不能在此处转义。"""
+    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
+
+
 def to_markdown(blocks: list[Block]) -> bytes:
     lines: list[str] = []
     for block in blocks:
@@ -68,9 +74,11 @@ def to_markdown(blocks: list[Block]) -> bytes:
         elif isinstance(block, TableBlock):
             rows = _table_rows(block)
             if rows:
-                lines.append("| " + " | ".join(rows[0]) + " |")
+                lines.append("| " + " | ".join(_md_cell(cell) for cell in rows[0]) + " |")
                 lines.append("| " + " | ".join(["---"] * len(rows[0])) + " |")
-                lines.extend("| " + " | ".join(row) + " |" for row in rows[1:])
+                lines.extend(
+                    "| " + " | ".join(_md_cell(cell) for cell in row) + " |" for row in rows[1:]
+                )
                 lines.append("")
         elif isinstance(block, (PageBreak, Rule)):
             lines += ["---", ""]
