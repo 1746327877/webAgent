@@ -152,6 +152,9 @@ def _normalize_ws(spans: list[Span]) -> list[Span]:
         text = span.text if span.text == "\n" else re.sub(r"\s+", " ", span.text)
         if text:
             out.append(Span(text, span.bold, span.italic, span.code))
+    # 行尾孤立的换行 span（如段落以 <br> 结尾）会让 md 输出多出空行，直接丢弃
+    while out and out[-1].text == "\n":
+        out.pop()
     if out:
         first = out[0]
         out[0] = Span(first.text.lstrip(" "), first.bold, first.italic, first.code)

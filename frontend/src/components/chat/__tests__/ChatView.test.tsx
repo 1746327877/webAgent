@@ -203,6 +203,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   useChatStreamStore.getState().clear();
 });
 
@@ -594,5 +595,4 @@ test("流结束后刷新产物列表", async () => {
       ),
     ).toBe(true),
   );
-  spy.mockRestore();
 });

@@ -18,6 +18,8 @@ from app.models import Artifact, Message, Session, User
 # 导出的是纯文本纪要，不可能这么大；纯防御，避免异常数据把盘写满
 MAX_ARTIFACT_BYTES = 5 * 1024 * 1024
 _UNSAFE_FILENAME = re.compile(r"[\\/:*?\"<>|\x00-\x1f]")
+# 落盘名只用白名单扩展名：filename 来自调用方，越界字符/超长后缀不能进存储名
+_ALLOWED_ARTIFACT_EXTS = {"md", "docx", "pdf", "txt", "csv", "json", "html", "bin"}
 
 
 def safe_filename(name: str, fallback: str = "文件") -> str:
@@ -88,7 +90,9 @@ async def create_bytes_artifact(
     """
     if len(data) > MAX_ARTIFACT_BYTES:
         raise ValueError(f"产物过大（{len(data)} 字节）")
-    ext = Path(filename).suffix.lstrip(".") or "bin"
+    ext = Path(filename).suffix.lstrip(".").lower()
+    if ext not in _ALLOWED_ARTIFACT_EXTS:
+        ext = "bin"
     stored_name = f"{uuid.uuid4()}.{ext}"
     path = Path(settings.upload_dir) / stored_name
     path.parent.mkdir(parents=True, exist_ok=True)

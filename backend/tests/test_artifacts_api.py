@@ -154,6 +154,27 @@ async def test_create_bytes_artifact_persists_file(client, auth_headers, session
     assert download.content == b"PK\x03\x04hello"
 
 
+async def test_create_bytes_artifact_whitelists_extension(client, auth_headers, session_maker):
+    import uuid as _uuid
+
+    from app.models import Session as SessionModel
+    from app.services import artifact_service
+
+    session = await _seed_session(client, auth_headers, session_maker, title="产物")
+    async with session_maker() as db:
+        row = await db.get(SessionModel, _uuid.UUID(session["id"]))
+        artifact = await artifact_service.create_bytes_artifact(
+            db,
+            row,
+            filename="evil.docx.exe",
+            mime_type="application/octet-stream",
+            data=b"payload",
+            source="tool",
+        )
+    # 越界扩展名不得进存储名，回落到 bin
+    assert artifact.file_path.endswith(".bin")
+
+
 async def test_create_bytes_artifact_rejects_oversized(client, auth_headers, session_maker):
     import uuid as _uuid
 
@@ -193,6 +214,8 @@ async def test_docx_artifact_preview_returns_html(
     r = await client.get(f"/api/v1/artifacts/{artifact.id}/preview", headers=auth_headers)
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/html")
+    assert r.headers["content-security-policy"] == "sandbox"
+    assert r.headers["x-content-type-options"] == "nosniff"
     assert "预览正文" in r.text
 
 

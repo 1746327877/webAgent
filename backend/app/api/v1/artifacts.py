@@ -113,4 +113,8 @@ async def preview_artifact(
         html = docx_to_html(path)
     except Exception as exc:  # 预览失败返回可读错误，不阻断下载
         raise HTTPException(status_code=500, detail=f"预览生成失败：{str(exc)[:200]}") from exc
-    return HTMLResponse(html)
+    # 预览 HTML 由不可信 docx 生成，CSP sandbox 让响应自身不可执行脚本，不依赖前端行为
+    return HTMLResponse(
+        html,
+        headers={"Content-Security-Policy": "sandbox", "X-Content-Type-Options": "nosniff"},
+    )

@@ -5,6 +5,7 @@ const mockState = vi.hoisted(() => ({
   artifacts: [] as unknown[],
   body: "",
   status: 200,
+  fetchedUrls: [] as string[],
 }));
 
 vi.mock("@/api/artifacts", () => ({
@@ -15,7 +16,10 @@ vi.mock("@/api/artifacts", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
-  apiFetch: async () => new Response(mockState.body, { status: mockState.status }),
+  apiFetch: async (url: string) => {
+    mockState.fetchedUrls.push(url);
+    return new Response(mockState.body, { status: mockState.status });
+  },
   apiJson: async () => ({}),
   apiErrorMessage: () => "",
 }));
@@ -36,6 +40,7 @@ beforeEach(() => {
   mockState.artifacts = [];
   mockState.body = "";
   mockState.status = 200;
+  mockState.fetchedUrls = [];
 });
 
 test("没有产物时给出导出引导", () => {
@@ -88,4 +93,14 @@ test("docx 产物走预览接口并渲染进 sandbox iframe", async () => {
   expect(frame.getAttribute("title")).toBe("报告.docx");
   expect(frame.getAttribute("sandbox")).toBe("");
   expect(frame.getAttribute("srcdoc")).toContain("正文");
+  await waitFor(() =>
+    expect(mockState.fetchedUrls).toContain("/api/v1/artifacts/d1/preview"),
+  );
+});
+
+test("docx 预览失败时提示错误", async () => {
+  mockState.artifacts = [DOCX_ARTIFACT];
+  mockState.status = 415;
+  render(<ArtifactPanel sessionId="s1" onClose={vi.fn()} />);
+  expect(await screen.findByText(/加载失败（HTTP 415）/)).toBeInTheDocument();
 });

@@ -67,6 +67,30 @@ def test_txt_to_markdown_keeps_paragraph_break(tmp_path):
     assert "第一段\n\n第二段" in out.data.decode("utf-8")
 
 
+def test_trailing_line_break_does_not_add_blank_line():
+    from app.ai.convert.readers import read_markdown
+    from app.ai.convert.writers import to_markdown
+
+    text = to_markdown(read_markdown("第一段<br>\n\n第二段")).decode("utf-8")
+    assert "第一段\n\n\n" not in text
+    assert "第一段\n\n第二段" in text
+
+
+def test_txt_to_docx(tmp_path):
+    out = convert_file(write(tmp_path, "a.txt", "第一段\n\n第二段"), "txt", "docx")
+    import docx
+
+    document = docx.Document(io.BytesIO(out.data))
+    assert any("第一段" in p.text for p in document.paragraphs)
+
+
+def test_docx_to_markdown_keeps_list_and_code(tmp_path):
+    docx_bytes = convert_file(write(tmp_path, "note.md", MD_SAMPLE), "md", "docx").data
+    text = convert_file(write(tmp_path, "note.docx", docx_bytes), "docx", "md").data.decode("utf-8")
+    assert "print(1)" in text
+    assert "- 甲" in text
+
+
 def test_empty_content_is_rejected(tmp_path):
     with pytest.raises(ConvertError, match="未提取到"):
         convert_file(write(tmp_path, "empty.txt", "   \n\n"), "txt", "md")
