@@ -91,6 +91,19 @@ async def download_artifact(
     return FileResponse(path, media_type=artifact.mime_type, filename=artifact.filename)
 
 
+@router.delete("/artifacts/{aid}", status_code=204)
+async def delete_artifact(
+    aid: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """删除产物（行 + 磁盘文件）；别人的产物 404，不泄露存在性。"""
+    artifact = await artifact_service.get_owned_artifact(db, user, aid)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="产物不存在")
+    await artifact_service.delete_artifact(db, artifact)
+
+
 @router.get("/artifacts/{aid}/preview", response_class=HTMLResponse)
 async def preview_artifact(
     aid: uuid.UUID,

@@ -138,6 +138,15 @@ async def list_artifacts(db: AsyncSession, session: Session) -> list[Artifact]:
     )
 
 
+async def delete_artifact(db: AsyncSession, artifact: Artifact) -> None:
+    """删除产物：先删磁盘文件再删行；文件已缺失也不报错（状态以行为准）。"""
+    # 与下载同一防护：file_path 含分隔符的脏数据不动盘，只删行
+    if "/" not in artifact.file_path and "\\" not in artifact.file_path:
+        Path(settings.upload_dir, artifact.file_path).unlink(missing_ok=True)
+    await db.delete(artifact)
+    await db.commit()
+
+
 async def get_owned_artifact(
     db: AsyncSession, user: User, artifact_id: uuid.UUID
 ) -> Artifact | None:

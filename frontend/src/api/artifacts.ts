@@ -35,6 +35,20 @@ export function useExportMarkdown(sessionId?: string) {
   });
 }
 
+/** 删除产物（行 + 磁盘文件）；成功后刷新产物列表 */
+export function useDeleteArtifact(sessionId?: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiFetch(`/api/v1/artifacts/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["artifacts", sessionId] });
+    },
+  });
+}
+
 export function artifactFileUrl(id: string): string {
   return `/api/v1/artifacts/${id}`;
 }

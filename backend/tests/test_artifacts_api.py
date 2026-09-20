@@ -132,6 +132,45 @@ async def test_download_missing_artifact_is_404(client, auth_headers):
     assert r.status_code == 404
 
 
+async def test_delete_artifact_removes_row_and_file(client, auth_headers, session_maker):
+    session = await _seed_session(client, auth_headers, session_maker)
+    created = (
+        await client.post(
+            f"/api/v1/sessions/{session['id']}/artifacts/markdown", headers=auth_headers
+        )
+    ).json()
+
+    r = await client.delete(f"/api/v1/artifacts/{created['id']}", headers=auth_headers)
+    assert r.status_code == 204
+    items = (
+        await client.get(f"/api/v1/sessions/{session['id']}/artifacts", headers=auth_headers)
+    ).json()
+    assert items == []
+    assert (
+        await client.get(f"/api/v1/artifacts/{created['id']}", headers=auth_headers)
+    ).status_code == 404
+
+
+async def test_delete_artifact_owner_isolation(client, auth_headers, session_maker):
+    from tests.test_sessions_api import make_user
+
+    session = await _seed_session(client, auth_headers, session_maker)
+    created = (
+        await client.post(
+            f"/api/v1/sessions/{session['id']}/artifacts/markdown", headers=auth_headers
+        )
+    ).json()
+
+    other = await make_user(client, "bob")
+    assert (
+        await client.delete(f"/api/v1/artifacts/{created['id']}", headers=other)
+    ).status_code == 404
+    items = (
+        await client.get(f"/api/v1/sessions/{session['id']}/artifacts", headers=auth_headers)
+    ).json()
+    assert len(items) == 1
+
+
 async def test_create_bytes_artifact_persists_file(client, auth_headers, session_maker):
     import uuid as _uuid
 

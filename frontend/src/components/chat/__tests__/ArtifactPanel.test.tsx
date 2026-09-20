@@ -6,6 +6,7 @@ const mockState = vi.hoisted(() => ({
   body: "",
   status: 200,
   fetchedUrls: [] as string[],
+  deleteMutate: vi.fn(),
 }));
 
 vi.mock("@/api/artifacts", () => ({
@@ -13,6 +14,7 @@ vi.mock("@/api/artifacts", () => ({
   artifactFileUrl: (id: string) => `/api/v1/artifacts/${id}`,
   artifactPreviewUrl: (id: string) => `/api/v1/artifacts/${id}/preview`,
   downloadArtifact: vi.fn(),
+  useDeleteArtifact: () => ({ mutate: mockState.deleteMutate, isPending: false }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -41,6 +43,7 @@ beforeEach(() => {
   mockState.body = "";
   mockState.status = 200;
   mockState.fetchedUrls = [];
+  mockState.deleteMutate.mockClear();
   localStorage.clear();
 });
 
@@ -116,6 +119,28 @@ test("docx 预览失败时提示错误", async () => {
   mockState.status = 415;
   render(<ArtifactPanel sessionId="s1" onClose={vi.fn()} />);
   expect(await screen.findByText(/加载失败（HTTP 415）/)).toBeInTheDocument();
+});
+
+test("点删除并确认后调用删除接口", async () => {
+  mockState.artifacts = [MARKDOWN_ARTIFACT];
+  mockState.body = "# 会议纪要";
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<ArtifactPanel sessionId="s1" onClose={vi.fn()} />);
+  await screen.findByRole("heading", { name: "会议纪要" });
+  fireEvent.click(screen.getByRole("button", { name: "删除" }));
+  expect(mockState.deleteMutate).toHaveBeenCalledWith("a1");
+  confirm.mockRestore();
+});
+
+test("删除时点取消则不调用接口", async () => {
+  mockState.artifacts = [MARKDOWN_ARTIFACT];
+  mockState.body = "# 会议纪要";
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  render(<ArtifactPanel sessionId="s1" onClose={vi.fn()} />);
+  await screen.findByRole("heading", { name: "会议纪要" });
+  fireEvent.click(screen.getByRole("button", { name: "删除" }));
+  expect(mockState.deleteMutate).not.toHaveBeenCalled();
+  confirm.mockRestore();
 });
 
 test("拖拽手柄调整产物区宽度并持久化，双击恢复默认", () => {

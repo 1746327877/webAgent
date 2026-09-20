@@ -7,6 +7,7 @@ import {
   artifactPreviewUrl,
   downloadArtifact,
   useArtifacts,
+  useDeleteArtifact,
   type ArtifactInfo,
 } from "@/api/artifacts";
 
@@ -134,7 +135,7 @@ export default function ArtifactPanel({
               </li>
             ))}
           </ul>
-          {active && <ArtifactPreview artifact={active} />}
+          {active && <ArtifactPreview artifact={active} sessionId={sessionId} />}
         </>
       )}
     </aside>
@@ -147,11 +148,12 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function ArtifactPreview({ artifact }: { artifact: ArtifactInfo }) {
+function ArtifactPreview({ artifact, sessionId }: { artifact: ArtifactInfo; sessionId: string }) {
   const [text, setText] = useState<string | null>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const deleteArtifact = useDeleteArtifact(sessionId);
 
   useEffect(() => {
     let alive = true;
@@ -203,6 +205,19 @@ function ArtifactPreview({ artifact }: { artifact: ArtifactInfo }) {
           onClick={() => void downloadArtifact(artifact)}
         >
           下载
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={deleteArtifact.isPending}
+          onClick={() => {
+            // 误删多为误点导出：删前确认，确认后由 mutation 刷新列表
+            if (window.confirm(`删除产物「${artifact.filename}」？`)) {
+              deleteArtifact.mutate(artifact.id);
+            }
+          }}
+        >
+          {deleteArtifact.isPending ? "删除中…" : "删除"}
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
