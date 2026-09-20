@@ -29,6 +29,18 @@ async def test_model_config_validation(client, auth_headers):
     assert r.status_code == 422
 
 
+async def test_model_config_num_ctx_allows_large_window(client, auth_headers):
+    """num_ctx 上限 262144（对齐 qwen3.5:9b 原生窗口），超限 422。"""
+    ok = {**AGENT, "model_config": {"model": "m", "num_ctx": 262144}}
+    r = await client.post("/api/v1/agents", json=ok, headers=auth_headers)
+    assert r.status_code == 201
+    assert r.json()["model_config"]["num_ctx"] == 262144
+
+    bad = {**AGENT, "model_config": {"model": "m", "num_ctx": 262145}}
+    r = await client.post("/api/v1/agents", json=bad, headers=auth_headers)
+    assert r.status_code == 422
+
+
 async def test_list_update_archive_delete(client, auth_headers):
     aid = (await client.post("/api/v1/agents", json=AGENT, headers=auth_headers)).json()["id"]
     lst = await client.get("/api/v1/agents", headers=auth_headers)

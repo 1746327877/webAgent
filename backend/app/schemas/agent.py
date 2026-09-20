@@ -11,7 +11,8 @@ class ModelConfig(BaseModel):
     temperature: float = Field(0.7, ge=0, le=2)
     top_p: float = Field(0.9, ge=0, le=1)
     max_tokens: int = Field(2048, ge=128, le=8192)
-    num_ctx: int = Field(8192, ge=2048, le=32768)
+    # 上限 262144 对齐 qwen3.5:9b 原生窗口；显存是否扛得住由部署侧保障，校验只拦非法范围
+    num_ctx: int = Field(8192, ge=2048, le=262144)
     supports_thinking: bool = False
     history_rounds: int = Field(10, ge=1, le=50)
     fallback_model: str | None = None

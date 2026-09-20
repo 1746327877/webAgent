@@ -189,7 +189,7 @@ export default function AgentForm({
         temperature: Number.isFinite(temperature) ? temperature : 0.7,
         top_p: Number.isFinite(topP) ? topP : 0.9,
         max_tokens: clampInt(maxTokens, 128, 8192, 2048),
-        num_ctx: clampInt(numCtx, 2048, 32768, 8192),
+        num_ctx: clampInt(numCtx, 2048, 262144, 8192),
       },
       welcome_msg: welcomeMsg.trim(),
       examples: splitLines(examplesText).slice(0, 5),
@@ -355,7 +355,7 @@ export default function AgentForm({
             id="agent-num-ctx"
             type="number"
             min={2048}
-            max={32768}
+            max={262144}
             value={Number.isFinite(numCtx) ? numCtx : ""}
             onChange={(e) => patchConfig("num_ctx", e.target.value === "" ? "" : e.target.valueAsNumber)}
           />
