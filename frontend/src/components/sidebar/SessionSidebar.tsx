@@ -19,7 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useUiStore } from "@/stores/ui";
 import { toast } from "@/stores/toast";
@@ -77,6 +77,8 @@ export default function SessionSidebar() {
   const toggleTheme = useUiStore((s) => s.toggleTheme);
   const thinkingDefaultOpen = useUiStore((s) => s.thinkingDefaultOpen);
   const setThinkingDefaultOpen = useUiStore((s) => s.setThinkingDefaultOpen);
+  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   const debounced = useDebouncedValue(query, 300);
   const { data, fetchNextPage, hasNextPage } = useSessions(debounced, showArchived);
   const { data: agents = [] } = useAgents();
@@ -209,10 +211,39 @@ export default function SessionSidebar() {
     );
   }
 
+  if (sidebarCollapsed) {
+    // 收起态：只留窄栏（展开 + 新建两个图标），把横向空间还给对话区
+    return (
+      <aside aria-label="会话侧边栏（已收起）" className="flex w-12 shrink-0 flex-col items-center gap-1 border-r py-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="展开侧边栏"
+          title="展开侧边栏"
+          onClick={() => setSidebarCollapsed(false)}
+        >
+          <PanelLeftOpen />
+        </Button>
+        <Button variant="ghost" size="icon" aria-label="新建任务" title="新建任务" onClick={onNew}>
+          <Plus />
+        </Button>
+      </aside>
+    );
+  }
+
   return (
     <aside className="flex w-72 shrink-0 flex-col border-r">
       <div className="space-y-2 p-3">
         <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="收起侧边栏"
+            title="收起侧边栏"
+            onClick={() => setSidebarCollapsed(true)}
+          >
+            <PanelLeftClose />
+          </Button>
           <Button className="flex-1" onClick={onNew}>＋ 新建任务</Button>
           <DropdownMenu>
             <DropdownMenuTrigger

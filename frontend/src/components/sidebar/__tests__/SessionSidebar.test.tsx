@@ -51,6 +51,7 @@ function queryResult(items: SessionItem[]) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.useSessions.mockReturnValue(queryResult([]));
+  useUiStore.setState({ sidebarCollapsed: false });
 });
 
 function LocationProbe() {
@@ -151,6 +152,25 @@ test("切换主题按钮为根节点添加 dark class", () => {
   fireEvent.click(screen.getByRole("button", { name: "切换主题" }));
   expect(document.documentElement.classList.contains("dark")).toBe(true);
   document.documentElement.classList.remove("dark");
+});
+
+test("点击图标收起/展开侧边栏，状态落盘", () => {
+  mocks.useSessions.mockReturnValue(queryResult([makeSession()]));
+  render(
+    <MemoryRouter>
+      <SessionSidebar />
+    </MemoryRouter>,
+  );
+  expect(screen.getByText("Java 学习")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
+  expect(screen.queryByText("Java 学习")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "展开侧边栏" })).toBeInTheDocument();
+  expect(localStorage.getItem("ui-sidebar-collapsed")).toBe("1");
+
+  fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
+  expect(screen.getByText("Java 学习")).toBeInTheDocument();
+  expect(localStorage.getItem("ui-sidebar-collapsed")).toBe("0");
 });
 
 test("多选模式：分组复选框整组选中，就近确认后批量删除", async () => {

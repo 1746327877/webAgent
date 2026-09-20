@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 
 const mockState = vi.hoisted(() => ({
@@ -41,6 +41,7 @@ beforeEach(() => {
   mockState.body = "";
   mockState.status = 200;
   mockState.fetchedUrls = [];
+  localStorage.clear();
 });
 
 test("没有产物时给出导出引导", () => {
@@ -103,4 +104,30 @@ test("docx 预览失败时提示错误", async () => {
   mockState.status = 415;
   render(<ArtifactPanel sessionId="s1" onClose={vi.fn()} />);
   expect(await screen.findByText(/加载失败（HTTP 415）/)).toBeInTheDocument();
+});
+
+test("拖拽手柄调整产物区宽度并持久化，双击恢复默认", () => {
+  mockState.artifacts = [MARKDOWN_ARTIFACT];
+  mockState.body = "# 会议纪要";
+  render(<ArtifactPanel sessionId="s1" onClose={vi.fn()} />);
+
+  const panel = screen.getByRole("complementary", { name: "会话产物" });
+  const handle = screen.getByTestId("artifact-resize-handle");
+  expect(panel).toHaveStyle({ width: "384px" });
+
+  // 手柄在左边缘：往左拖 100px → 面板加宽 100px
+  fireEvent.pointerDown(handle, { clientX: 500 });
+  fireEvent.pointerMove(window, { clientX: 400 });
+  fireEvent.pointerUp(window);
+  expect(panel).toHaveStyle({ width: "484px" });
+  expect(localStorage.getItem("artifact-panel-width")).toBe("484");
+
+  // 往右猛拖 → 钳制到最小 280px
+  fireEvent.pointerDown(handle, { clientX: 500 });
+  fireEvent.pointerMove(window, { clientX: 900 });
+  fireEvent.pointerUp(window);
+  expect(panel).toHaveStyle({ width: "280px" });
+
+  fireEvent.doubleClick(handle);
+  expect(panel).toHaveStyle({ width: "384px" });
 });

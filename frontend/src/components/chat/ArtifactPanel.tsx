@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "@/components/ui/button";
 import MarkdownContent from "@/components/chat/MarkdownContent";
 import { apiFetch } from "@/lib/api";
@@ -12,6 +12,24 @@ import {
 
 /** 与后端 app/ai/convert.DOCX_MIME 一致：docx 不能原生预览，走后端转 HTML */
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+// 产物区拖拽宽度：默认 w-96（384px），钳制范围避免挤占对话区，落盘持久化
+const PANEL_WIDTH_KEY = "artifact-panel-width";
+const PANEL_DEFAULT_WIDTH = 384;
+const PANEL_MIN_WIDTH = 280;
+const PANEL_MAX_WIDTH = 720;
+
+function clampPanelWidth(value: number): number {
+  return Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, Math.round(value)));
+}
+
+function initialPanelWidth(): number {
+  const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+  if (Number.isFinite(saved) && localStorage.getItem(PANEL_WIDTH_KEY) !== null) {
+    return clampPanelWidth(saved);
+  }
+  return PANEL_DEFAULT_WIDTH;
+}
 
 /**
  * 右侧产物区：列出会话产物并预览。
@@ -29,12 +47,59 @@ export default function ArtifactPanel({
   const { data: artifacts = [], isLoading } = useArtifacts(sessionId);
   const [activeId, setActiveId] = useState<string | null>(null);
   const active = artifacts.find((item) => item.id === activeId) ?? artifacts[0] ?? null;
+  const [width, setWidth] = useState(initialPanelWidth);
+  const [dragging, setDragging] = useState(false);
+  const dragStart = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  function onHandlePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    dragStart.current = { startX: e.clientX, startWidth: width };
+    setDragging(true);
+    // jsdom 没有 setPointerCapture：可选调用避免测试抛错
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  }
+
+  useEffect(() => {
+    if (!dragging) return;
+    // 手柄在面板左边缘：往左拖（clientX 变小）面板变宽
+    function onMove(e: PointerEvent) {
+      const start = dragStart.current;
+      if (start) setWidth(clampPanelWidth(start.startWidth + (start.startX - e.clientX)));
+    }
+    function onUp() {
+      setDragging(false);
+      dragStart.current = null;
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [dragging]);
+
+  // 拖拽结束再落盘，避免 move 高频写 localStorage；挂载时也会写一次默认值，无害
+  useEffect(() => {
+    if (!dragging) localStorage.setItem(PANEL_WIDTH_KEY, String(width));
+  }, [dragging, width]);
 
   return (
     <aside
       aria-label="会话产物"
-      className="flex w-96 shrink-0 flex-col overflow-hidden border-l"
+      style={{ width }}
+      className={`relative flex shrink-0 flex-col overflow-hidden border-l ${dragging ? "select-none" : ""}`}
     >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整产物区宽度"
+        data-testid="artifact-resize-handle"
+        title="拖拽调整宽度，双击恢复默认"
+        onPointerDown={onHandlePointerDown}
+        onDoubleClick={() => setWidth(PANEL_DEFAULT_WIDTH)}
+        className={`absolute top-0 bottom-0 -left-1 w-2 cursor-col-resize touch-none ${
+          dragging ? "bg-primary/40" : "hover:bg-primary/20"
+        }`}
+      />
       <div className="flex items-center justify-between border-b px-3 py-2">
         <span className="text-sm font-medium">产物（{artifacts.length}）</span>
         <Button variant="ghost" size="sm" onClick={onClose}>
