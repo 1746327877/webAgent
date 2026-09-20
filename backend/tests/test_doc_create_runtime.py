@@ -128,3 +128,144 @@ async def test_doc_create_empty_content_returns_error(client, auth_headers, sess
     msgs = (await client.get(f"/api/v1/sessions/{s['id']}/messages", headers=auth_headers)).json()
     block = next(b for b in msgs[1]["blocks"] if b["type"] == "tool_result")
     assert block["status"] == "error" and "文档内容" in block["preview"]
+
+
+async def test_doc_create_invalid_target_returns_error(client, auth_headers, session_maker):
+    s = await _session(client, auth_headers, session_maker)
+    provider = FakeProvider(
+        [
+            [
+                (
+                    "tool_call",
+                    {
+                        "id": "c1",
+                        "name": "doc_create",
+                        "args": {"filename": "x", "content": CONTENT, "target": "html"},
+                    },
+                )
+            ],
+            [("token", {"delta": "好"})],
+        ]
+    )
+    app.dependency_overrides[get_provider] = lambda: provider
+    await client.post(
+        f"/api/v1/sessions/{s['id']}/messages",
+        json={"content": "生成"},
+        headers=auth_headers,
+    )
+    msgs = (await client.get(f"/api/v1/sessions/{s['id']}/messages", headers=auth_headers)).json()
+    block = next(b for b in msgs[1]["blocks"] if b["type"] == "tool_result")
+    assert block["status"] == "error" and "目标格式" in block["preview"]
+    artifacts = (
+        await client.get(f"/api/v1/sessions/{s['id']}/artifacts", headers=auth_headers)
+    ).json()
+    assert artifacts == []
+
+
+async def test_doc_create_too_long_content_is_rejected(client, auth_headers, session_maker):
+    from app.ai.runtime import MAX_CREATE_CONTENT_CHARS
+
+    s = await _session(client, auth_headers, session_maker)
+    provider = FakeProvider(
+        [
+            [
+                (
+                    "tool_call",
+                    {
+                        "id": "c1",
+                        "name": "doc_create",
+                        "args": {
+                            "filename": "x",
+                            "content": "啊" * (MAX_CREATE_CONTENT_CHARS + 1),
+                            "target": "pdf",
+                        },
+                    },
+                )
+            ],
+            [("token", {"delta": "好"})],
+        ]
+    )
+    app.dependency_overrides[get_provider] = lambda: provider
+    await client.post(
+        f"/api/v1/sessions/{s['id']}/messages",
+        json={"content": "生成"},
+        headers=auth_headers,
+    )
+    msgs = (await client.get(f"/api/v1/sessions/{s['id']}/messages", headers=auth_headers)).json()
+    block = next(b for b in msgs[1]["blocks"] if b["type"] == "tool_result")
+    assert block["status"] == "error" and "过长" in block["preview"]
+
+
+async def test_doc_create_filename_is_sanitized(client, auth_headers, session_maker):
+    s = await _session(client, auth_headers, session_maker)
+    provider = FakeProvider(
+        [
+            [
+                (
+                    "tool_call",
+                    {
+                        "id": "c1",
+                        "name": "doc_create",
+                        "args": {"filename": "请假/条", "content": CONTENT, "target": "pdf"},
+                    },
+                )
+            ],
+            [("token", {"delta": "好"})],
+        ]
+    )
+    app.dependency_overrides[get_provider] = lambda: provider
+    await client.post(
+        f"/api/v1/sessions/{s['id']}/messages",
+        json={"content": "生成"},
+        headers=auth_headers,
+    )
+    artifacts = (
+        await client.get(f"/api/v1/sessions/{s['id']}/artifacts", headers=auth_headers)
+    ).json()
+    assert len(artifacts) == 1
+    assert "/" not in artifacts[0]["filename"] and artifacts[0]["filename"].endswith(".pdf")
+
+
+async def test_doc_create_partial_failure_reports_made_part(
+    client, auth_headers, session_maker, monkeypatch
+):
+    import app.ai.convert as convert_mod
+    from app.ai.convert import ConvertError
+
+    real = convert_mod.convert_markdown
+
+    def flaky(content, target):
+        if target == "pdf":
+            raise ConvertError("模拟 pdf 渲染失败")
+        return real(content, target)
+
+    monkeypatch.setattr(convert_mod, "convert_markdown", flaky)
+    s = await _session(client, auth_headers, session_maker)
+    provider = FakeProvider(
+        [
+            [
+                (
+                    "tool_call",
+                    {
+                        "id": "c1",
+                        "name": "doc_create",
+                        "args": {"filename": "请假条", "content": CONTENT, "target": "both"},
+                    },
+                )
+            ],
+            [("token", {"delta": "好"})],
+        ]
+    )
+    app.dependency_overrides[get_provider] = lambda: provider
+    await client.post(
+        f"/api/v1/sessions/{s['id']}/messages",
+        json={"content": "生成"},
+        headers=auth_headers,
+    )
+    msgs = (await client.get(f"/api/v1/sessions/{s['id']}/messages", headers=auth_headers)).json()
+    block = next(b for b in msgs[1]["blocks"] if b["type"] == "tool_result")
+    assert block["status"] == "error" and "部分生成成功" in block["preview"]
+    artifacts = (
+        await client.get(f"/api/v1/sessions/{s['id']}/artifacts", headers=auth_headers)
+    ).json()
+    assert [a["filename"] for a in artifacts] == ["请假条.docx"]

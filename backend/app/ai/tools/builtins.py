@@ -49,9 +49,10 @@ async def transcribe_audio(name: str = "") -> str:
     category="document",
     is_system=True,
 )
-async def doc_create(filename: str, content: str, target: str = "both") -> str:
+async def doc_create(filename: str = "", content: str = "", target: str = "both") -> str:
     """真实生成在 runtime 层拦截（只有平台有产物落盘能力）。
 
+    参数给默认值：LLM 漏传时由 runtime 返回可读错误回填，而不是在 schema 层直接非法。
     `filename`：不带后缀的文件名；`content`：完整的 Markdown 正文；
     `target`：md / docx / pdf / both（同时生成 docx 与 pdf）。
     """

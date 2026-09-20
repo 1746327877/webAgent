@@ -10,6 +10,10 @@ DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 MIME_BY_TARGET = {"md": "text/markdown", "docx": DOCX_MIME, "pdf": "application/pdf"}
 SOURCE_EXTS = {"pdf", "docx", "md", "markdown", "txt"}
 TARGETS = ("md", "docx", "pdf")
+# doc_create 的 target 取值：单格式 + both（一次同时生成 docx 与 pdf）；
+# 集中定义避免 "both" 魔法字符串散落在 builtins/runtime/skill 三处。
+CREATE_BOTH = "both"
+CREATE_TARGETS = (*TARGETS, CREATE_BOTH)
 
 
 class ConvertError(ValueError):
@@ -21,6 +25,20 @@ class ConvertedDoc:
     data: bytes
     mime: str
     ext: str
+
+
+def _render_blocks(blocks: list, target: str) -> ConvertedDoc:
+    """IR 渲染成目标字节：convert_file 与 convert_markdown 共用的唯一渲染入口。"""
+    try:
+        if target == "md":
+            data = to_markdown(blocks)
+        elif target == "docx":
+            data = to_docx(blocks)
+        else:
+            data = to_pdf(blocks)
+    except Exception as exc:  # 渲染失败统一转为用户可读 ConvertError，原始异常由 from 保留堆栈
+        raise ConvertError(f"生成 {target} 失败：{str(exc)[:200]}") from exc
+    return ConvertedDoc(data=data, mime=MIME_BY_TARGET[target], ext=target)
 
 
 def convert_file(path: Path, src_ext: str, target: str) -> ConvertedDoc:
@@ -44,16 +62,7 @@ def convert_file(path: Path, src_ext: str, target: str) -> ConvertedDoc:
     if not blocks:
         hint = "（可能是扫描件，未接入 OCR）" if src_ext == "pdf" else ""
         raise ConvertError(f"未提取到可转换的内容{hint}")
-    try:
-        if target == "md":
-            data = to_markdown(blocks)
-        elif target == "docx":
-            data = to_docx(blocks)
-        else:
-            data = to_pdf(blocks)
-    except Exception as exc:  # 渲染失败统一转为用户可读 ConvertError，原始异常由 from 保留堆栈
-        raise ConvertError(f"生成 {target} 失败：{str(exc)[:200]}") from exc
-    return ConvertedDoc(data=data, mime=MIME_BY_TARGET[target], ext=target)
+    return _render_blocks(blocks, target)
 
 
 def convert_markdown(content: str, target: str) -> ConvertedDoc:
@@ -69,17 +78,10 @@ def convert_markdown(content: str, target: str) -> ConvertedDoc:
         raise ConvertError("未提供可生成的文档内容")
     try:
         blocks = read_markdown(content)
+    except ConvertError:
+        raise
     except Exception as exc:  # 外部解析失败统一转为用户可读错误，原始异常由 from 保留在堆栈
         raise ConvertError(f"解析失败：{str(exc)[:200]}") from exc
     if not blocks:
         raise ConvertError("未提取到可转换的内容")
-    try:
-        if target == "md":
-            data = to_markdown(blocks)
-        elif target == "docx":
-            data = to_docx(blocks)
-        else:
-            data = to_pdf(blocks)
-    except Exception as exc:  # 渲染失败统一转为用户可读 ConvertError，原始异常由 from 保留堆栈
-        raise ConvertError(f"生成 {target} 失败：{str(exc)[:200]}") from exc
-    return ConvertedDoc(data=data, mime=MIME_BY_TARGET[target], ext=target)
+    return _render_blocks(blocks, target)

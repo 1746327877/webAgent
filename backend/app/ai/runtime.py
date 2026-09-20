@@ -361,20 +361,18 @@ async def _run_create_tool(
 
     与 `doc_convert` 共用同一条 `read_markdown → writers` 渲染链（同一保真），
     区别只是内容来源是模型参数而非上传附件。`target=both` 时一次落 docx+pdf 两个产物。
+    both 部分失败时如实告知已生成的部分，不谎称整体失败（已落盘的产物保留）。
     """
-    from app.ai.convert import MIME_BY_TARGET, ConvertError, convert_markdown
+    from app.ai.convert import CREATE_BOTH, CREATE_TARGETS, ConvertError, convert_markdown
     from app.services import artifact_service
 
     if db is None or session_id is None:
         return "生成不可用：缺少会话上下文。", "error"
 
-    target = str(parsed.get("target") or "both").strip().lower().lstrip(".")
-    if target == "both":
-        targets = ["docx", "pdf"]
-    elif target in ("md", "docx", "pdf"):
-        targets = [target]
-    else:
+    target = str(parsed.get("target") or CREATE_BOTH).strip().lower().lstrip(".")
+    if target not in CREATE_TARGETS:
         return "生成失败：目标格式仅支持 md / docx / pdf / both", "error"
+    targets = ["docx", "pdf"] if target == CREATE_BOTH else [target]
 
     content = str(parsed.get("content") or "")
     if not content.strip():
@@ -394,20 +392,27 @@ async def _run_create_tool(
         try:
             converted = await asyncio.to_thread(convert_markdown, content, item)
         except ConvertError as exc:
+            logger.warning("doc_create 生成失败 target=%s error=%s", item, exc)
+            if made:
+                return f"部分生成成功：{'、'.join(made)}；{item} 生成失败：{exc}", "error"
             return f"生成失败：{exc}", "error"
         except Exception as exc:  # noqa: BLE001 —— 工具失败只回填错误结果，不中断生成
             logger.warning("doc_create 生成失败 target=%s error=%s", item, exc)
+            if made:
+                return f"部分生成成功：{'、'.join(made)}；{item} 生成失败：{str(exc)[:200]}", "error"
             return f"生成失败：{str(exc)[:200]}", "error"
         try:
             artifact = await artifact_service.create_bytes_artifact(
                 db,
                 session,
                 filename=f"{stem}.{converted.ext}",
-                mime_type=converted.mime or MIME_BY_TARGET[item],
+                mime_type=converted.mime,
                 data=converted.data,
                 source="tool",
             )
         except ValueError as exc:
+            if made:
+                return f"部分生成成功：{'、'.join(made)}；{item} 落盘失败：{exc}", "error"
             return f"生成失败：{exc}", "error"
         made.append(f"{artifact.filename}（{artifact.size_bytes} 字节）")
     return f"已生成 {'、'.join(made)}，可在右侧「产物」区下载或预览。", "ok"
