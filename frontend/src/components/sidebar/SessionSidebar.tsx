@@ -211,28 +211,33 @@ export default function SessionSidebar() {
     );
   }
 
-  if (sidebarCollapsed) {
-    // 收起态：只留窄栏（展开 + 新建两个图标），把横向空间还给对话区
-    return (
-      <aside aria-label="会话侧边栏（已收起）" className="flex w-12 shrink-0 flex-col items-center gap-1 border-r py-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="展开侧边栏"
-          title="展开侧边栏"
-          onClick={() => setSidebarCollapsed(false)}
-        >
-          <PanelLeftOpen />
-        </Button>
-        <Button variant="ghost" size="icon" aria-label="新建任务" title="新建任务" onClick={onNew}>
-          <Plus />
-        </Button>
-      </aside>
-    );
-  }
-
+  // 单个 aside 做 width 过渡：展开内容定宽 w-72 + 外层 overflow-hidden，
+  // 收起时内容被裁剪滑出而非回流抖动；motion-safe 尊重减少动态偏好
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r">
+    <aside
+      aria-label={sidebarCollapsed ? "会话侧边栏（已收起）" : undefined}
+      className={`flex shrink-0 flex-col overflow-hidden border-r motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-in-out ${
+        sidebarCollapsed ? "w-12" : "w-72"
+      }`}
+    >
+      {sidebarCollapsed ? (
+        // 收起态：只留窄栏（展开 + 新建两个图标），把横向空间还给对话区
+        <div className="flex w-12 flex-col items-center gap-1 py-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="展开侧边栏"
+            title="展开侧边栏"
+            onClick={() => setSidebarCollapsed(false)}
+          >
+            <PanelLeftOpen />
+          </Button>
+          <Button variant="ghost" size="icon" aria-label="新建任务" title="新建任务" onClick={onNew}>
+            <Plus />
+          </Button>
+        </div>
+      ) : (
+      <div className="flex min-h-0 w-72 flex-1 flex-col">
       <div className="space-y-2 p-3">
         <div className="flex gap-1">
           <Button
@@ -419,6 +424,8 @@ export default function SessionSidebar() {
           </Button>
         </div>
       </div>
+      </div>
+      )}
     </aside>
   );
 }

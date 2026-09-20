@@ -167,6 +167,8 @@ test("点击图标收起/展开侧边栏，状态落盘", () => {
   expect(screen.queryByText("Java 学习")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "展开侧边栏" })).toBeInTheDocument();
   expect(localStorage.getItem("ui-sidebar-collapsed")).toBe("1");
+  // 收起/展开走 width 过渡而非跳变
+  expect(document.querySelector("aside")?.className).toContain("transition-[width]");
 
   fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
   expect(screen.getByText("Java 学习")).toBeInTheDocument();
