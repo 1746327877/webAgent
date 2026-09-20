@@ -173,14 +173,43 @@ export default function MarkdownContent({
   content,
   maxRef = 0,
   onCitation,
+  roleBadges = false,
 }: {
   content: string;
   /** 本条消息 citation 的最大编号，只有存在的编号会转为 #cite-n 锚点 */
   maxRef?: number;
   onCitation?: (ref: number) => void;
+  /** 纪要类预览专用：把 `## 我` / `## 助手` 渲染成带颜色的身份徽章框 */
+  roleBadges?: boolean;
 }) {
   const components: Components = {
     pre: PreBlock,
+    // 纪要导出（`## 我` / `## 助手`）的身份框：只在 roleBadges 开启时生效，
+    // 对话消息保持原样；精确匹配全文，避免误伤"我认为…"这类标题
+    h2: ({ node: _node, children, ...props }: ComponentPropsWithoutRef<"h2"> & ExtraProps) => {
+      if (roleBadges) {
+        const label = textContent(children).trim();
+        if (label === "我" || label === "助手") {
+          const isUser = label === "我";
+          return (
+            <h2
+              {...props}
+              className={cn(
+                "my-3 flex items-center gap-2 rounded-md border px-3 py-1.5 text-base font-semibold",
+                isUser
+                  ? "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+                  : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                props.className,
+              )}
+            >
+              <span aria-hidden="true">{isUser ? "🙋" : "🤖"}</span>
+              {children}
+            </h2>
+          );
+        }
+      }
+      return <h2 {...props}>{children}</h2>;
+    },
     // 模型常把链接包在反引号里写成行内代码（`weixin://…`），而行内代码优先于自动链接解析，
     // 结果就是等宽文本、点不动（用户只会选中文字）。整段就是链接的行内代码直接渲染成链接。
     // 判定用「无语言标记 + 单行」：唯一的误伤是「无语言标记、内容只有一个 URL 的围栏代码块」，

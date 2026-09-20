@@ -70,6 +70,18 @@ test("取产物失败时提示错误而不是空白", async () => {
   expect(await screen.findByText(/加载失败（HTTP 404）/)).toBeInTheDocument();
 });
 
+test("纪要类产物里 `## 我` / `## 助手` 显示身份徽章框", async () => {
+  mockState.artifacts = [MARKDOWN_ARTIFACT];
+  mockState.body = "## 我\n\n你好\n\n## 助手\n\n好的";
+  render(<ArtifactPanel sessionId="s1" onClose={vi.fn()} />);
+  expect(await screen.findByRole("heading", { name: "我" })).toHaveClass(
+    "border-sky-500/40",
+  );
+  expect(screen.getByRole("heading", { name: "助手" })).toHaveClass(
+    "border-emerald-500/40",
+  );
+});
+
 const DOCX_ARTIFACT = {
   id: "d1",
   session_id: "s1",

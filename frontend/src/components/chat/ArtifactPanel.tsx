@@ -224,7 +224,8 @@ function ArtifactPreview({ artifact }: { artifact: ArtifactInfo }) {
           text === null ? (
             <p className="text-sm text-muted-foreground">加载中…</p>
           ) : (
-            <MarkdownContent content={text} />
+            /* 纪要类 md 的 `## 我` / `## 助手` 渲染成身份徽章框 */
+            <MarkdownContent content={text} roleBadges />
           )
         ) : blobUrl === null ? (
           <p className="text-sm text-muted-foreground">加载中…</p>

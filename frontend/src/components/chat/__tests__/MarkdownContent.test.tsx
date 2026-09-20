@@ -78,6 +78,26 @@ test("正文里的竖线不会被误判成表格", async () => {
   expect(screen.getByText(/A \| B 是并列写法/)).toBeInTheDocument();
 });
 
+test("roleBadges 关闭时 `## 我` 仍是普通标题", () => {
+  render(<MarkdownContent content={"## 我\n\n你好"} />);
+  const heading = screen.getByRole("heading", { name: "我" });
+  expect(heading).not.toHaveClass("border-sky-500/40");
+});
+
+test("roleBadges 开启时 `## 我` / `## 助手` 渲染成不同颜色的身份框", () => {
+  render(
+    <MarkdownContent content={"## 我\n\n你好\n\n## 助手\n\n好的\n\n## 我的看法\n\n补充"} roleBadges />,
+  );
+  const user = screen.getByRole("heading", { name: "我" });
+  const assistant = screen.getByRole("heading", { name: "助手" });
+  expect(user).toHaveClass("border-sky-500/40");
+  expect(assistant).toHaveClass("border-emerald-500/40");
+  // 只是包含"我"的标题不误伤
+  expect(screen.getByRole("heading", { name: "我的看法" })).not.toHaveClass(
+    "border-sky-500/40",
+  );
+});
+
 test("有序/无序列表补回序号与缩进（Tailwind preflight 会清掉默认样式）", async () => {
   render(<MarkdownContent content={"1. 第一项\n2. 第二项\n\n- 甲\n- 乙"} />);
   const [ordered, unordered] = await screen.findAllByRole("list");
