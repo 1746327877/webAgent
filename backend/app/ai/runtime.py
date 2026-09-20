@@ -70,6 +70,9 @@ def extract_tool_links(text: str) -> tuple[list[str], list[str]]:
     return links, images
 # 单个附件注入上下文上限，防止超大文档挤爆 prompt
 MAX_DOCUMENT_CONTEXT_CHARS = 8000
+# doc_create 单次内容上限：Markdown 约 5 万字符渲染后仍远小于 5MB 产物上限，
+# 超了直接拒绝，避免超大 tool 参数挤爆上下文与磁盘
+MAX_CREATE_CONTENT_CHARS = 50000
 CANCEL_FLAGS: dict[uuid.UUID, bool] = {}
 CANCEL_SESSIONS: set[uuid.UUID] = set()  # 会话级停止标记，供排队中的接力回合消费
 
@@ -154,6 +157,9 @@ async def _execute_tool(
             return await _run_convert_tool(
                 document_files or [], parsed, db=db, session_id=session_id
             )
+        # doc_create 在 runtime 层拦截：只有平台有产物落盘能力
+        if name == "doc_create":
+            return await _run_create_tool(parsed, db=db, session_id=session_id)
         result = await asyncio.wait_for(item.handler(**parsed), timeout=TOOL_TIMEOUT_S)
         return str(result), "ok"
     except Exception as exc:  # noqa: BLE001 —— 工具失败转为错误结果回填，不中断生成
@@ -343,6 +349,68 @@ async def _run_convert_tool(
         ),
         "ok",
     )
+
+
+async def _run_create_tool(
+    parsed: dict,
+    *,
+    db: AsyncSession | None,
+    session_id: uuid.UUID | None,
+) -> tuple[str, str]:
+    """内置工具 `doc_create`：把 LLM 提供的 Markdown 正文渲染成文件并落成产物。
+
+    与 `doc_convert` 共用同一条 `read_markdown → writers` 渲染链（同一保真），
+    区别只是内容来源是模型参数而非上传附件。`target=both` 时一次落 docx+pdf 两个产物。
+    """
+    from app.ai.convert import MIME_BY_TARGET, ConvertError, convert_markdown
+    from app.services import artifact_service
+
+    if db is None or session_id is None:
+        return "生成不可用：缺少会话上下文。", "error"
+
+    target = str(parsed.get("target") or "both").strip().lower().lstrip(".")
+    if target == "both":
+        targets = ["docx", "pdf"]
+    elif target in ("md", "docx", "pdf"):
+        targets = [target]
+    else:
+        return "生成失败：目标格式仅支持 md / docx / pdf / both", "error"
+
+    content = str(parsed.get("content") or "")
+    if not content.strip():
+        return "生成失败：未提供可生成的文档内容", "error"
+    if len(content) > MAX_CREATE_CONTENT_CHARS:
+        return f"生成失败：文档内容过长（{len(content)} 字符，上限 {MAX_CREATE_CONTENT_CHARS}）", "error"
+
+    stem = artifact_service.safe_filename(
+        Path(str(parsed.get("filename") or "")).stem, "生成文档"
+    )
+    session = await db.get(Session, session_id)
+    if session is None:
+        return "生成失败：会话不存在。", "error"
+
+    made: list[str] = []
+    for item in targets:
+        try:
+            converted = await asyncio.to_thread(convert_markdown, content, item)
+        except ConvertError as exc:
+            return f"生成失败：{exc}", "error"
+        except Exception as exc:  # noqa: BLE001 —— 工具失败只回填错误结果，不中断生成
+            logger.warning("doc_create 生成失败 target=%s error=%s", item, exc)
+            return f"生成失败：{str(exc)[:200]}", "error"
+        try:
+            artifact = await artifact_service.create_bytes_artifact(
+                db,
+                session,
+                filename=f"{stem}.{converted.ext}",
+                mime_type=converted.mime or MIME_BY_TARGET[item],
+                data=converted.data,
+                source="tool",
+            )
+        except ValueError as exc:
+            return f"生成失败：{exc}", "error"
+        made.append(f"{artifact.filename}（{artifact.size_bytes} 字节）")
+    return f"已生成 {'、'.join(made)}，可在右侧「产物」区下载或预览。", "ok"
 
 
 async def _run_transcribe_tool(

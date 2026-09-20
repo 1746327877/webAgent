@@ -43,6 +43,22 @@ async def transcribe_audio(name: str = "") -> str:
 
 
 @tool(
+    "doc_create",
+    "文档生成",
+    "根据 Markdown 正文生成 md/docx/pdf 文件，生成可下载的会话产物",
+    category="document",
+    is_system=True,
+)
+async def doc_create(filename: str, content: str, target: str = "both") -> str:
+    """真实生成在 runtime 层拦截（只有平台有产物落盘能力）。
+
+    `filename`：不带后缀的文件名；`content`：完整的 Markdown 正文；
+    `target`：md / docx / pdf / both（同时生成 docx 与 pdf）。
+    """
+    return "文档生成不可用：缺少会话上下文。"
+
+
+@tool(
     "doc_convert",
     "文档转换",
     "把本轮上传的文档转换为指定格式（md/docx/pdf），生成可下载的会话产物",

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.ai.convert.readers import read_source
+from app.ai.convert.readers import read_markdown, read_source
 from app.ai.convert.writers import to_docx, to_markdown, to_pdf
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -44,6 +44,35 @@ def convert_file(path: Path, src_ext: str, target: str) -> ConvertedDoc:
     if not blocks:
         hint = "（可能是扫描件，未接入 OCR）" if src_ext == "pdf" else ""
         raise ConvertError(f"未提取到可转换的内容{hint}")
+    try:
+        if target == "md":
+            data = to_markdown(blocks)
+        elif target == "docx":
+            data = to_docx(blocks)
+        else:
+            data = to_pdf(blocks)
+    except Exception as exc:  # 渲染失败统一转为用户可读 ConvertError，原始异常由 from 保留堆栈
+        raise ConvertError(f"生成 {target} 失败：{str(exc)[:200]}") from exc
+    return ConvertedDoc(data=data, mime=MIME_BY_TARGET[target], ext=target)
+
+
+def convert_markdown(content: str, target: str) -> ConvertedDoc:
+    """把 Markdown 文本直接渲染成目标格式字节；失败抛 ConvertError。
+
+    给 `doc_create` 工具用：内容来自 LLM 而非上传文件，所以不走文件读取，
+    只复用 `read_markdown → writers` 同一条渲染链（与 doc_convert 同保真）。
+    """
+    target = (target or "").lower().lstrip(".")
+    if target not in TARGETS:
+        raise ConvertError("目标格式仅支持 md / docx / pdf")
+    if not (content or "").strip():
+        raise ConvertError("未提供可生成的文档内容")
+    try:
+        blocks = read_markdown(content)
+    except Exception as exc:  # 外部解析失败统一转为用户可读错误，原始异常由 from 保留在堆栈
+        raise ConvertError(f"解析失败：{str(exc)[:200]}") from exc
+    if not blocks:
+        raise ConvertError("未提取到可转换的内容")
     try:
         if target == "md":
             data = to_markdown(blocks)

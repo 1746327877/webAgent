@@ -137,6 +137,33 @@ _register(
 )
 
 
+_register(
+    SkillDef(
+        slug="doc_create",
+        name="文档生成",
+        icon="✍️",
+        summary="根据对话内容生成请假条、证明、报告等 md/docx/pdf 文件，产出可下载的会话产物。",
+        usage=(
+            "给智能体绑定本 Skill 与「文档生成」工具；用户说「帮我写份请假条/证明」时，"
+            "系统会生成真实文件，在右侧「产物」区下载或预览。"
+        ),
+        instructions=(
+            "用户需要生成请假条、证明、报告等成文文档时，先按中文公文排版写好 Markdown 正文"
+            "（标题、段落、落款日期齐全），再调用 doc_create 工具，不要在回复里贴出全文。"
+            "filename 取有意义的名称（不带后缀，如 请假条-张三-2026-09-20）；"
+            "默认 target 取 both（同时生成 docx 与 pdf），用户明确只要一种格式时才用单值。"
+            "工具返回后，用一句话告知产物文件名，并提示可在右侧「产物」区下载或预览；不要复述正文全文。"
+        ),
+        examples=[
+            "帮我写份请假条，明天感冒请假一天",
+            "生成一份实习证明，要 PDF",
+            "帮我起草一份会议纪要，导出 Word 和 PDF",
+        ],
+        recommended_tools=["doc_create"],
+    )
+)
+
+
 def list_skills() -> list[dict]:
     return [asdict(skill) for skill in SKILL_REGISTRY.values()]
 
