@@ -891,11 +891,21 @@ async def run_generation(
             return str(entry["label"]) if entry else tool_name
 
         cancelled = False
-        for _ in range(MAX_TOOL_ROUNDS):
+        for round_index in range(MAX_TOOL_ROUNDS + 1):
+            # 保底收尾轮：撞到工具轮数上限后不再提供工具，强制模型基于已有
+            # 工具结果作答；提示只进内存 messages，不落库、不污染历史
+            final_round = round_index == MAX_TOOL_ROUNDS
+            if final_round:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "请基于以上工具结果直接给出最终回答，不要再调用工具。",
+                    }
+                )
             req = ChatRequest(
                 model=cfg.model,
                 messages=messages,
-                tools=all_tools or None,
+                tools=None if final_round else (all_tools or None),
                 temperature=cfg.temperature,
                 top_p=cfg.top_p,
                 max_tokens=cfg.max_tokens,
@@ -990,6 +1000,9 @@ async def run_generation(
                     ended_at=datetime.now(UTC),
                     duration_ms=round((time.monotonic() - round_started_mono) * 1000),
                 )
+            if final_round:
+                # 收尾轮无工具可用：即使 provider 误返回 tool_call 也丢弃，直接收尾
+                tool_calls = []
             if cancelled or not tool_calls:
                 break
 

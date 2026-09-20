@@ -132,4 +132,36 @@ async def test_tool_loop_capped_at_five_rounds(client, auth_headers, session_mak
         f"/api/v1/sessions/{s['id']}/messages", json={"content": "hi"}, headers=auth_headers
     )
     assert "event: done" in r.text
-    assert len(provider.requests) == 5  # 轮数上限
+    # 5 轮工具上限 + 1 轮无工具收尾（FakeProvider 脚本耗尽后重复最后一轮，
+    # 收尾轮的 tool_call 会被丢弃，直接结束）
+    assert len(provider.requests) == 6
+    assert provider.requests[-1].tools is None
+
+
+async def test_tool_loop_falls_back_to_summary_after_cap(client, auth_headers, session_maker):
+    """撞到 5 轮工具上限后加一轮无工具收尾：模型基于工具结果作答，不以纯工具卡片结束。"""
+    agent, s = await _session_with_agent(client, auth_headers)
+    async with session_maker() as db:
+        await sync_tools(db)
+        tool = (await db.scalars(select(Tool).where(Tool.slug == "time_now"))).first()
+        db.add(AgentTool(agent_id=agent["id"], tool_id=tool.id))
+        await db.commit()
+
+    rounds = [
+        [("tool_call", {"id": f"c{i}", "name": "time_now", "args": "{}"})] for i in range(5)
+    ]
+    rounds.append([("token", {"delta": "总结完毕"})])
+    provider = FakeProvider(rounds)
+    app.dependency_overrides[get_provider] = lambda: provider
+    r = await client.post(
+        f"/api/v1/sessions/{s['id']}/messages", json={"content": "hi"}, headers=auth_headers
+    )
+    assert "event: done" in r.text
+    assert len(provider.requests) == 6  # 5 轮工具 + 1 轮无工具收尾
+    last = provider.requests[5]
+    assert last.tools is None
+    assert last.messages[-1]["role"] == "user" and "直接给出最终回答" in last.messages[-1]["content"]
+
+    msgs = (await client.get(f"/api/v1/sessions/{s['id']}/messages", headers=auth_headers)).json()
+    blocks = msgs[1]["blocks"]
+    assert blocks[-1]["type"] == "text" and blocks[-1]["content"] == "总结完毕"
